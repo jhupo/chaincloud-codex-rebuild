@@ -31,6 +31,22 @@ function clearDir(dir) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
+function createZipFromDir(sourceDir, zipPath) {
+  try {
+    execSync(`7zz a -tzip -mx=5 "${zipPath}" .`, { cwd: sourceDir, stdio: "pipe" });
+    return;
+  } catch {}
+  try {
+    execSync(`7z a -tzip -mx=5 "${zipPath}" .`, { cwd: sourceDir, stdio: "pipe" });
+    return;
+  } catch {}
+  const escapedZip = zipPath.replace(/'/g, "''");
+  execSync(
+    `powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Test-Path '${escapedZip}') { Remove-Item -LiteralPath '${escapedZip}' -Force }; Compress-Archive -Path * -DestinationPath '${escapedZip}' -Force"`,
+    { cwd: sourceDir, stdio: "pipe" },
+  );
+}
+
 function copyRecursive(src, dest) {
   fs.mkdirSync(dest, { recursive: true });
   let count = 0;
@@ -244,7 +260,7 @@ function buildWin(platform) {
   const zipName = `Codex-win-x64-${version}.zip`;
   const zipPath = path.join(OUT_DIR, zipName);
   console.log(`   [zip] ${zipName}`);
-  execSync(`7zz a -tzip -mx=5 "${zipPath}" .`, { cwd: outApp });
+  createZipFromDir(outApp, zipPath);
 
   const sizeMB = (fs.statSync(zipPath).size / 1048576).toFixed(1);
   console.log(`   [ok] ${zipPath} (${sizeMB} MB)`);
