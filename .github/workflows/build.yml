@@ -15,6 +15,7 @@ on:
 
 env:
   NODE_VERSION: "24"
+  ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
 
 jobs:
   build-mac:
@@ -86,6 +87,8 @@ jobs:
       - run: |
           sudo apt-get update
           sudo apt-get install -y rpm fakeroot dpkg 7zip
+      - name: Use Electron mirror
+        run: echo "ELECTRON_MIRROR=${ELECTRON_MIRROR}" >> $GITHUB_ENV
       - run: node scripts/sync-upstream.js --force --skip-win
       - run: node scripts/patch-all.js mac-${{ matrix.arch }}
       - run: npm run build:linux-${{ matrix.arch }}
