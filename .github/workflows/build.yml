@@ -1,6 +1,9 @@
-name: Build & Release (Manual)
+name: Build & Release
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       platform:
@@ -15,7 +18,7 @@ env:
 
 jobs:
   build-mac:
-    if: inputs.platform == 'all' || inputs.platform == 'mac'
+    if: github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'mac'
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -40,7 +43,7 @@ jobs:
           path: out/*.dmg
 
   build-windows:
-    if: inputs.platform == 'all' || inputs.platform == 'windows'
+    if: github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'windows'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
@@ -63,9 +66,10 @@ jobs:
         with:
           name: Codex-Windows-x64
           path: out/*.zip
+          if-no-files-found: error
 
   build-linux:
-    if: inputs.platform == 'all' || inputs.platform == 'linux'
+    if: github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'linux'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -92,3 +96,31 @@ jobs:
             out/make/deb/**/*.deb
             out/make/rpm/**/*.rpm
             out/make/zip/**/*.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build-mac, build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Display artifacts
+        run: ls -lhR artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Codex ${{ github.ref_name }}
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.zip
+            artifacts/**/*.deb
+            artifacts/**/*.rpm
+          draft: false
+          fail_on_unmatched_files: true
