@@ -889,6 +889,35 @@ function matchOne(source, regex, label) {
   return match;
 }
 
+function patchStartupAuthGate(platform, isCheck) {
+  const root = appRootFor(platform);
+  const assetsDir = path.join(root, "webview", "assets");
+  if (!fs.existsSync(assetsDir)) return { file: null, changed: false };
+  const fileName = fs.readdirSync(assetsDir).find((name) => /^app-main-.*\.js$/.test(name));
+  if (!fileName) return { file: null, changed: false };
+  const file = path.join(assetsDir, fileName);
+  let source = read(file);
+
+  const alreadyPatched = "if((t||!n)&&window.__chaincloudCodexAuth?.isLoggedIn?.()){";
+  if (source.includes(alreadyPatched)) return { file, changed: false };
+
+  const nativeGate = "if(t||!n){";
+  const guardStart = source.indexOf("function qw(){");
+  const guardEnd = guardStart >= 0 ? source.indexOf("var Jw=", guardStart) : -1;
+  if (guardStart < 0 || guardEnd < guardStart) {
+    throw new Error("Unable to locate startup auth guard");
+  }
+  const before = source.slice(0, guardStart);
+  let guard = source.slice(guardStart, guardEnd);
+  const after = source.slice(guardEnd);
+  if (!guard.includes(nativeGate)) throw new Error("Unable to locate startup auth condition");
+  guard = guard.replace(nativeGate, alreadyPatched);
+  source = before + guard + after;
+
+  if (!isCheck) write(file, source);
+  return { file, changed: true };
+}
+
 function patchLoginRoute(platform, isCheck) {
   const file = findLoginBundle(platform);
   if (!file) return { file: null, changed: false };
@@ -1219,6 +1248,7 @@ function main() {
     const htmlChanged = patchHtml(plat, isCheck);
     const preloadChanged = patchPreload(plat, isCheck);
     const mainProxy = patchMainProxy(plat, isCheck);
+    const startupGate = patchStartupAuthGate(plat, isCheck);
     const login = patchLoginRoute(plat, isCheck);
     const profileTouched = patchProfileBundles(plat, isCheck);
     const composerTouched = patchComposerBundles(plat, isCheck);
@@ -1231,6 +1261,7 @@ function main() {
       ["html", htmlChanged, path.join(appRootFor(plat), "webview", "index.html")],
       ["preload", preloadChanged, path.join(appRootFor(plat), ".vite", "build", "preload.js")],
       ["main-proxy", mainProxy.changed, mainProxy.file],
+      ["startup-gate", startupGate.changed, startupGate.file],
       ["login", login.changed, login.file],
       ["agent-settings", agentSettings.changed, agentSettings.file],
     ]) {
