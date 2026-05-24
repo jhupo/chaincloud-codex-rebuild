@@ -1058,6 +1058,18 @@ function patchComposerBundles(platform, isCheck) {
     const file = path.join(assetsDir, name);
     let source = read(file);
     let changed = false;
+    if (source.includes("ChainCloudInlineBilling")) {
+      const helperStart = source.indexOf("function ChainCloudInlineBilling()");
+      const helperEnd = helperStart >= 0 ? source.indexOf("function ", helperStart + 1) : -1;
+      if (helperStart >= 0 && helperEnd > helperStart) {
+        source = source.slice(0, helperStart) + source.slice(helperEnd);
+        changed = true;
+      }
+      if (source.includes(",(0,Q.jsx)(ChainCloudInlineBilling,{})")) {
+        source = source.replaceAll(",(0,Q.jsx)(ChainCloudInlineBilling,{})", "");
+        changed = true;
+      }
+    }
     if (!source.includes("__chaincloudCodexSwitchApiKey")) {
       const needle = "let k=O,A=o?.authMethod===`copilot`,";
       if (source.includes(needle)) {
@@ -1067,22 +1079,21 @@ function patchComposerBundles(platform, isCheck) {
         changed = true;
       }
     }
-    if (!source.includes("ChainCloudInlineBilling")) {
-      const helper = "function ChainCloudInlineBilling(){let e=(0,Z.c)(8),[t,n]=(0,$.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`),r;e[0]===Symbol.for(`react.memo_cache_sentinel`)?(r=()=>{let e=!0;return window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)}).catch(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)}),()=>{e=!1}},e[0]=r):r=e[0],(0,$.useEffect)(r,[]);let i;e[1]===Symbol.for(`react.memo_cache_sentinel`)?(i=(0,Q.jsx)(`div`,{className:`text-token-input-placeholder-foreground`,children:`\u94fe\u8def\u4e91`}),e[1]=i):i=e[1];let a;e[2]!==t?(a=(0,Q.jsx)(`div`,{className:`whitespace-pre-line font-medium leading-snug`,children:t}),e[2]=t,e[3]=a):a=e[3];let o;e[4]!==i||e[5]!==a?(o=(0,Q.jsxs)(`div`,{className:`mt-2 flex flex-col items-center gap-1 border-t border-token-border pt-2 text-center text-sm`,children:[i,a]}),e[4]=i,e[5]=a,e[6]=o):o=e[6];return o}";
-      const switchIndex = source.indexOf("window.__chaincloudCodexSwitchApiKey");
-      const functionIndex = source.lastIndexOf("function ", switchIndex);
-      const menuIndex = source.indexOf("contentWidth:`menuNarrow`", switchIndex);
-      const tooltipNeedle = ",fe,pe]})}";
-      const tooltipIndex = source.indexOf(tooltipNeedle, menuIndex);
-      if (switchIndex >= 0 && functionIndex >= 0 && menuIndex >= 0 && tooltipIndex >= 0) {
-        source = source.slice(0, functionIndex) + helper + source.slice(functionIndex);
-        const adjustedTooltipIndex = tooltipIndex + helper.length;
-        source =
-          source.slice(0, adjustedTooltipIndex) +
-          ",fe,pe,(0,Q.jsx)(ChainCloudInlineBilling,{})]})}" +
-          source.slice(adjustedTooltipIndex + tooltipNeedle.length);
-        changed = true;
-      }
+    const providerNeedle = "let t=e.model_provider;if(t==null||t.length===0)return null;";
+    if (source.includes(providerNeedle) && !source.includes("t===`openai`)return `\u94fe\u8def\u4e91`")) {
+      source = source.replace(
+        providerNeedle,
+        "let t=e.model_provider;if(t==null||t.length===0)return null;if(t===`openai`)return `\u94fe\u8def\u4e91`;",
+      );
+      changed = true;
+    }
+    const providerButtonNeedle = "function Wm(e){let t=(0,$.c)(5),{name:n}=e,r;";
+    if (source.includes(providerButtonNeedle) && !source.includes("n=n===`OpenAI`?`\u94fe\u8def\u4e91`:n")) {
+      source = source.replace(
+        providerButtonNeedle,
+        "function Wm(e){let t=(0,$.c)(5),{name:n}=e;n=n===`OpenAI`?`\u94fe\u8def\u4e91`:n;let r;",
+      );
+      changed = true;
     }
     if (changed) {
       if (!isCheck) write(file, source);
@@ -1103,6 +1114,25 @@ function patchLocalThreadBundles(platform, isCheck) {
     let source = read(file);
     const original = source;
     let changed = false;
+
+    if (!source.includes("ChainCloudContextBilling") && source.includes("codex.localConversation.status.contextUsageTooltip")) {
+      const helper =
+        "function ChainCloudContextBilling(){let e=(0,Z.c)(5),[t,n]=(0,Q.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`),r;e[0]===Symbol.for(`react.memo_cache_sentinel`)?(r=()=>{let e=!0;window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)}).catch(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)});let t=()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)};return window.addEventListener(`chaincloud-auth-changed`,t),window.addEventListener(`chaincloud-api-key-selected`,t),()=>{e=!1,window.removeEventListener(`chaincloud-auth-changed`,t),window.removeEventListener(`chaincloud-api-key-selected`,t)}},e[0]=r):r=e[0],(0,Q.useEffect)(r,[]);let i;e[1]!==t?(i=(0,$.jsx)(`div`,{className:`mt-2 whitespace-pre-line border-t border-token-border pt-2 text-center font-medium leading-snug`,children:t}),e[1]=t,e[2]=i):i=e[2];return i}";
+      const functionIndex = source.indexOf("function mu(e)");
+      if (functionIndex >= 0) {
+        source = source.slice(0, functionIndex) + helper + source.slice(functionIndex);
+        changed = true;
+      }
+    }
+
+    const tooltipNeedle = "D=(0,$.jsx)(Tn,{side:`left`,tooltipContent:p,children:E})";
+    if (source.includes(tooltipNeedle) && source.includes("ChainCloudContextBilling")) {
+      source = source.replace(
+        tooltipNeedle,
+        "D=(0,$.jsx)(Tn,{side:`left`,tooltipContent:p?(0,$.jsxs)($.Fragment,{children:[p,(0,$.jsx)(ChainCloudContextBilling,{})]}):(0,$.jsx)(ChainCloudContextBilling,{}),children:E})",
+      );
+      changed = true;
+    }
 
     const billingApiKeyRow = /else if\(x\)\{let e,n=window\.__chaincloudCodexAuth\?\.displayName\?\.\(\)\|\|``,r=window\.__chaincloudCodexAuth\?\.billingText\?\.\(\)\|\|``;n&&\(e=\(0,Q\.jsxs\)\(Q\.Fragment,\{children:\[\(0,Q\.jsx\)\(jo,\{LeftIcon:Yu,disabled:!0,children:n\},`chaincloud-auth`\),r\?\(0,Q\.jsx\)\(jo,\{disabled:!0,children:r\},`chaincloud-billing`\):null\]\}\),De\.push\(e\)\)\}/;
     if (billingApiKeyRow.test(source)) {
