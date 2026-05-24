@@ -8,6 +8,27 @@ const path = require("path");
 const SRC_DIR = path.join(__dirname, "..", "src");
 const PROJECT_ROOT = path.join(__dirname, "..");
 
+function appRootFor(platform) {
+  if (platform === "preview-win") {
+    return path.join(PROJECT_ROOT, "out", "chaincloud-preview", "Codex-win32-x64", "resources", "app");
+  }
+  return path.join(SRC_DIR, platform, "_asar");
+}
+
+function read(file) {
+  return fs.readFileSync(file, "utf-8");
+}
+
+function write(file, content) {
+  fs.writeFileSync(file, content, "utf-8");
+}
+
+function matchOne(source, regex, label) {
+  const match = source.match(regex);
+  if (!match) throw new Error(`Unable to locate ${label}`);
+  return match;
+}
+
 /**
  * Locate bundles matching a filename pattern across platform directories.
  *
@@ -82,4 +103,15 @@ function relPath(absPath) {
   return path.relative(PROJECT_ROOT, absPath);
 }
 
-module.exports = { locateBundles, relPath, SRC_DIR, PROJECT_ROOT };
+module.exports = {
+  appRootFor,
+  fs,
+  locateBundles,
+  matchOne,
+  path,
+  read,
+  relPath,
+  SRC_DIR,
+  PROJECT_ROOT,
+  write,
+};

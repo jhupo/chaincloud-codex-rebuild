@@ -12,7 +12,7 @@
  */
 const fs = require("fs");
 const path = require("path");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(PROJECT_ROOT, "src");
@@ -63,6 +63,88 @@ function copyRecursive(src, dest) {
     }
   }
   return count;
+}
+
+function copyWinShellTemplate(src, dest) {
+  fs.mkdirSync(dest, { recursive: true });
+  let count = 0;
+  for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+    if (e.name === "resources") continue;
+    const s = path.join(src, e.name);
+    const d = path.join(dest, e.name);
+    if (e.isDirectory()) count += copyRecursive(s, d);
+    else if (!e.isSymbolicLink()) {
+      fs.copyFileSync(s, d);
+      count++;
+    }
+  }
+  return count;
+}
+
+function findOfficialWinShell() {
+  try {
+    const installLocation = execSync(
+      `powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-AppxPackage OpenAI.Codex).InstallLocation"`,
+      { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] },
+    ).trim();
+    if (installLocation) {
+      const appDir = path.join(installLocation, "app");
+      if (fs.existsSync(path.join(appDir, "Codex.exe"))) return appDir;
+    }
+  } catch {}
+  return null;
+}
+
+function ensureWinElectronShell(outApp) {
+  const exePath = path.join(outApp, "Codex.exe");
+  if (fs.existsSync(exePath)) return;
+
+  const officialShell = findOfficialWinShell();
+  if (officialShell) {
+    console.log(`   [electron] reusing official shell: ${officialShell}`);
+    copyWinShellTemplate(officialShell, outApp);
+    return;
+  }
+
+  const packageJson = require(path.join(PROJECT_ROOT, "package.json"));
+  const electronVersion =
+    String(packageJson.devDependencies?.electron || packageJson.dependencies?.electron || "")
+      .replace(/^[^\d]*/, "");
+  if (!electronVersion) throw new Error("Cannot determine Electron version");
+
+  const shellDir = path.join(require("os").tmpdir(), "codex-electron-shell", `electron-v${electronVersion}-win32-x64`);
+  const shellExe = path.join(shellDir, "electron.exe");
+
+  if (!fs.existsSync(shellExe)) {
+    console.log(`   [electron] fetching win32-x64 shell v${electronVersion}`);
+    clearDir(shellDir);
+    const downloader = `
+const { downloadArtifact } = require('@electron/get');
+const extract = require('extract-zip');
+(async () => {
+  const zip = await downloadArtifact({
+    version: ${JSON.stringify(electronVersion)},
+    artifactName: 'electron',
+    platform: 'win32',
+    arch: 'x64',
+    checksums: require('./node_modules/electron/checksums.json'),
+  });
+  await extract(zip, { dir: ${JSON.stringify(shellDir)} });
+})().catch((error) => {
+  console.error(error && error.stack ? error.stack : error);
+  process.exit(1);
+});
+`;
+    execFileSync(process.execPath, ["-e", downloader], {
+      cwd: PROJECT_ROOT,
+      stdio: "inherit",
+    });
+  }
+
+  if (!fs.existsSync(shellExe)) throw new Error("Downloaded Electron win32 shell is missing electron.exe");
+  console.log("   [electron] adding win32-x64 shell files");
+  copyWinShellTemplate(shellDir, outApp);
+  fs.renameSync(path.join(outApp, "electron.exe"), exePath);
 }
 
 function resolveCodexVendor(platform) {
@@ -226,6 +308,7 @@ function buildWin(platform) {
   const outApp = path.join(outAppDir, "Codex-win32-x64");
   console.log("   [copy] MSIX app/ -> out/");
   copyRecursive(appDir, outApp);
+  ensureWinElectronShell(outApp);
 
   const resourcesDir = path.join(outApp, "resources");
 
@@ -255,6 +338,10 @@ function buildWin(platform) {
   // Replace codex CLI
   replaceCodex(platform, resourcesDir, "codex.exe");
 
+  if (!fs.existsSync(path.join(outApp, "Codex.exe"))) {
+    throw new Error("Windows output is missing Codex.exe");
+  }
+
   // Create ZIP
   const version = getVersion(asarDir);
   const zipName = `Codex-win-x64-${version}.zip`;
@@ -279,10 +366,17 @@ function computeAsarHeaderHash(asarPath) {
 function patchExeHash(exePath, oldHash, newHash) {
   const buf = fs.readFileSync(exePath);
   const oldBuf = Buffer.from(oldHash, "ascii");
-  const idx = buf.indexOf(oldBuf);
+  let idx = buf.indexOf(oldBuf);
   if (idx < 0) {
-    console.log("   [!] old hash not found in exe");
-    return;
+    const text = buf.toString("latin1");
+    const match = text.match(/"file":"resources\\\\app\.asar","alg":"SHA256","value":"([a-f0-9]{64})"/);
+    if (match) {
+      idx = buf.indexOf(Buffer.from(match[1], "ascii"));
+      console.log(`   [integrity] using exe embedded hash: ${match[1].slice(0, 16)}...`);
+    }
+  }
+  if (idx < 0) {
+    throw new Error("ASAR integrity hash not found in Codex.exe");
   }
   Buffer.from(newHash, "ascii").copy(buf, idx);
   fs.writeFileSync(exePath, buf);

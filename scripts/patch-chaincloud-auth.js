@@ -10,6 +10,8 @@
 const fs = require("fs");
 const path = require("path");
 const { SRC_DIR, PROJECT_ROOT, relPath } = require("./patch-util");
+const { patchAgentSettingsBundle } = require("./patch-settings-api-key");
+const { patchBillingTooltipBundles } = require("./patch-billing-tooltip");
 
 const CHAINCLOUD_ORIGIN = "https://dash.classicriver.cn";
 const CHAINCLOUD_API_BASE = `${CHAINCLOUD_ORIGIN}/api/v1`;
@@ -238,12 +240,14 @@ function jsClientSource() {
   }
   async function ensureDesktopApiKey(){
     let keys = await listKeys();
-    let key = keys.find((k) => k && k.status === "active" && k.key)
+    const session = getSession();
+    const selectedKeyValue = session?.selectedApiKey?.key;
+    let key = selectedKeyValue ? keys.find((k) => k && k.key === selectedKeyValue && (k.status == null || k.status === "active")) : null;
+    key ||= keys.find((k) => k && k.status === "active" && k.key)
       || keys.find((k) => k && (k.status == null || k.status === "active") && k.key)
       || null;
     if (!key) key = await createDesktopKey();
     if (!key?.key) throw new Error("\u672a\u80fd\u83b7\u53d6\u53ef\u7528\u4e8e Codex \u7684 API Key");
-    const session = getSession();
     if (session) saveSession({ ...session, selectedApiKey: key });
     return key;
   }
@@ -272,11 +276,16 @@ function jsClientSource() {
   }
   async function switchDesktopApiKey(key){
     if (!key?.key) throw new Error("Invalid API key");
-    const session = getSession();
-    if (session) saveSession({ ...session, selectedApiKey: key });
+    setSelectedApiKey(key);
     const switcher = await waitForApiKeySwitcher();
     if (switcher) await switcher(key.key);
     else console.warn("[ChainCloud] Codex API key switcher is not ready yet");
+    return key;
+  }
+  function setSelectedApiKey(key){
+    if (!key?.key) throw new Error("Invalid API key");
+    const session = getSession();
+    if (session) saveSession({ ...session, selectedApiKey: key });
     window.dispatchEvent(new CustomEvent("chaincloud-api-key-selected", { detail: key }));
     return key;
   }
@@ -303,8 +312,8 @@ function jsClientSource() {
   }
   function billingPopoverText(){
     const summary = getSession()?.billingSummary;
-    if (!summary) return "\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --";
-    return "\u4eca\u65e5\u6d88\u8d39 " + formatMoney(summary.todaySpent) + "\\n\u5269\u4f59\u91d1\u989d " + formatMoney(summary.remaining);
+    if (!summary) return "\u4eca\u65e5\u6d88\u8d39 -- \u00b7 \u5269\u4f59\u91d1\u989d --";
+    return "\u4eca\u65e5\u6d88\u8d39 " + formatMoney(summary.todaySpent) + " \u00b7 \u5269\u4f59\u91d1\u989d " + formatMoney(summary.remaining);
   }
   let billingRefreshPromise = null;
   let billingRefreshAt = 0;
@@ -342,6 +351,7 @@ function jsClientSource() {
       };
       const latest = getSession();
       if (latest) saveSession({ ...latest, user: profile || user || latest.user, billingSummary: summary });
+      window.dispatchEvent(new CustomEvent("chaincloud-billing-updated", { detail: summary }));
       return summary;
     })().finally(() => { billingRefreshPromise = null; });
     return billingRefreshPromise;
@@ -581,6 +591,7 @@ function jsClientSource() {
         listKeys,
         ensureDesktopApiKey,
         switchDesktopApiKey,
+        setSelectedApiKey,
         getUsageSummary,
         getUsageStats,
         refreshBillingSummary,
@@ -1014,6 +1025,27 @@ function patchProfileBundleFile(file, isCheck) {
     changed = true;
   }
 
+  if (source.includes("chaincloud-login-profile") && !source.includes("__chaincloudCodexSwitchApiKey")) {
+    const profileDropdownSwitcherNeedle = "if(ve){let e;t[105]!==c||t[106]!==f||t[107]!==y?";
+    if (source.includes(profileDropdownSwitcherNeedle)) {
+      source = source.replace(
+        profileDropdownSwitcherNeedle,
+        "window.__chaincloudCodexSwitchApiKey=async e=>{await _(`login-with-api-key`,{hostId:f,apiKey:e}),y(`apikey`)};" +
+          profileDropdownSwitcherNeedle,
+      );
+      changed = true;
+    }
+    const legacyDropdownSwitcherNeedle = "Be=(0,Q.jsxs)(Q.Fragment,{children:[window.__chaincloudCodexAuth?.isLoggedIn?.()?";
+    if (source.includes(legacyDropdownSwitcherNeedle)) {
+      source = source.replace(
+        legacyDropdownSwitcherNeedle,
+        "window.__chaincloudCodexSwitchApiKey=async e=>{await zt(`login-with-api-key`,{hostId:Wr,apiKey:e}),h(`apikey`)};" +
+          legacyDropdownSwitcherNeedle,
+      );
+      changed = true;
+    }
+  }
+
   if (source.includes("profile-dropdown") && !source.includes("chaincloud-recharge-profile")) {
     const rechargeNeedle = "let Ft;t[147]!==xt||t[148]!==g||t[149]!==i||t[150]!==c?(Ft=g&&(0,Z.jsx)(K,{onClick:()=>{c(!1),be(i,Jt,{onConfirm:xt})},LeftIcon:Ze,children:(0,Z.jsx)(C,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`})}),t[147]=xt,t[148]=g,t[149]=i,t[150]=c,t[151]=Ft):Ft=t[151];";
     const rechargeReplacement =
@@ -1070,14 +1102,11 @@ function patchComposerBundles(platform, isCheck) {
         changed = true;
       }
     }
-    if (!source.includes("__chaincloudCodexSwitchApiKey")) {
-      const needle = "let k=O,A=o?.authMethod===`copilot`,";
-      if (source.includes(needle)) {
-        const replacement =
-          "let k=O;window.__chaincloudCodexSwitchApiKey=async e=>{await er(`login-with-api-key`,{hostId:a.hostId,apiKey:e})};let A=o?.authMethod===`copilot`,";
-        source = source.replace(needle, replacement);
-        changed = true;
-      }
+    const staleComposerSwitcher =
+      "let k=O;window.__chaincloudCodexSwitchApiKey=async e=>{await er(`login-with-api-key`,{hostId:a.hostId,apiKey:e})};let A=o?.authMethod===`copilot`,";
+    if (source.includes(staleComposerSwitcher)) {
+      source = source.replace(staleComposerSwitcher, "let k=O,A=o?.authMethod===`copilot`,");
+      changed = true;
     }
     const providerNeedle = "let t=e.model_provider;if(t==null||t.length===0)return null;";
     if (source.includes(providerNeedle) && !source.includes("t===`openai`)return `\u94fe\u8def\u4e91`")) {
@@ -1095,32 +1124,17 @@ function patchComposerBundles(platform, isCheck) {
       );
       changed = true;
     }
-    if (source.includes("let v=ji(_),") && !source.includes("let v=!0,")) {
-      source = source.replace("let v=ji(_),", "let v=!0,");
-      changed = true;
+
+    if (source.includes("function ChainCloudFooterBilling()")) {
+      const helperStart = source.indexOf("function ChainCloudFooterBilling()");
+      const helperEnd = helperStart >= 0 ? source.indexOf("function Um(e)", helperStart) : -1;
+      if (helperStart >= 0 && helperEnd > helperStart) {
+        source = source.slice(0, helperStart) + source.slice(helperEnd);
+        changed = true;
+      }
     }
-    if (!source.includes("function ChainCloudSpeedOptions()") && source.includes("function cm(e)")) {
-      const helper =
-        "function ChainCloudSpeedOptions(){return[{description:`\u9ed8\u8ba4\u901f\u5ea6\uff0c\u5e38\u89c4\u7528\u91cf`,iconKind:null,label:`\u6807\u51c6`,tier:null,value:null},{description:`1.5x \u901f\u5ea6\uff0c\u7528\u91cf\u589e\u52a0`,iconKind:`fast`,label:`\u5feb\u901f`,tier:{id:`fast`,name:`fast`},value:`fast`},{description:`\u6700\u5feb\u54cd\u5e94\uff0c\u7528\u91cf\u66f4\u9ad8`,iconKind:`ultrafast`,label:`\u8d85\u9ad8`,tier:{id:`ultrafast`,name:`ultrafast`},value:`ultrafast`}]}";
-      source = source.replace("function cm(e)", helper + "function cm(e)");
-      changed = true;
-    }
-    const speedMenuNeedle = "pe=v&&h.availableOptions.length>1?(0,Q.jsx)(fm,{options:h.availableOptions,selectedServiceTier:F,isLoading:h.isLoading,setServiceTier:g,onSelectComplete:R}):null";
-    if (source.includes(speedMenuNeedle)) {
-      source = source.replace(
-        speedMenuNeedle,
-        "pe=v?(0,Q.jsx)(fm,{options:h.availableOptions.length>1?h.availableOptions:ChainCloudSpeedOptions(),selectedServiceTier:F,isLoading:h.isLoading,setServiceTier:g,onSelectComplete:R}):null",
-      );
-      changed = true;
-    }
-    if (!source.includes("function ChainCloudFooterBilling()") && source.includes("function Um(e)")) {
-      const helper =
-        "function ChainCloudFooterBilling(){let e=(0,$.c)(7),[t,n]=(0,Z.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`),r;e[0]===Symbol.for(`react.memo_cache_sentinel`)?(r=()=>{let e=!0;window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)}).catch(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)});let t=()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)};return window.addEventListener(`chaincloud-auth-changed`,t),window.addEventListener(`chaincloud-api-key-selected`,t),()=>{e=!1,window.removeEventListener(`chaincloud-auth-changed`,t),window.removeEventListener(`chaincloud-api-key-selected`,t)}},e[0]=r):r=e[0],(0,Z.useEffect)(r,[]);let i;e[1]!==t?(i=(0,Q.jsxs)(`div`,{className:`flex flex-col items-center text-center leading-tight`,children:[(0,Q.jsx)(`span`,{className:`text-token-input-placeholder-foreground`,children:`\u80cc\u666f\u4fe1\u606f\u7a97\u53e3` }),(0,Q.jsx)(`span`,{className:`mt-1 whitespace-pre-line font-medium leading-snug`,children:t})]}),e[1]=t,e[2]=i):i=e[2];let a;e[3]===Symbol.for(`react.memo_cache_sentinel`)?(a=(0,Q.jsx)(`span`,{className:`inline-flex size-3 rounded-full border border-token-input-placeholder-foreground/70`}),e[3]=a):a=e[3];let o;e[4]!==i||e[5]!==a?(o=(0,Q.jsx)(Dn,{tooltipContent:i,side:`top`,align:`center`,sideOffset:4,children:(0,Q.jsx)(pr,{size:`composer`,color:`ghost`,className:`px-1`,children:a})}),e[4]=i,e[5]=a,e[6]=o):o=e[6];return o}";
-      source = source.replace("function Um(e)", helper + "function Um(e)");
-      changed = true;
-    }
-    if (source.includes("function ChainCloudFooterBilling()") && source.includes("children:[P,F,r,I]")) {
-      source = source.replace("children:[P,F,r,I]", "children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]");
+    if (source.includes("children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]")) {
+      source = source.replace("children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]", "children:[P,F,r,I]");
       changed = true;
     }
     if (changed) {
@@ -1143,22 +1157,20 @@ function patchLocalThreadBundles(platform, isCheck) {
     const original = source;
     let changed = false;
 
-    if (!source.includes("ChainCloudContextBilling") && source.includes("codex.localConversation.status.contextUsageTooltip")) {
-      const helper =
-        "function ChainCloudContextBilling(){let e=(0,Z.c)(5),[t,n]=(0,Q.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`),r;e[0]===Symbol.for(`react.memo_cache_sentinel`)?(r=()=>{let e=!0;window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)}).catch(()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)});let t=()=>{e&&n(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\u4eca\u65e5\u6d88\u8d39 --\\n\u5269\u4f59\u91d1\u989d --`)};return window.addEventListener(`chaincloud-auth-changed`,t),window.addEventListener(`chaincloud-api-key-selected`,t),()=>{e=!1,window.removeEventListener(`chaincloud-auth-changed`,t),window.removeEventListener(`chaincloud-api-key-selected`,t)}},e[0]=r):r=e[0],(0,Q.useEffect)(r,[]);let i;e[1]!==t?(i=(0,$.jsx)(`div`,{className:`mt-2 whitespace-pre-line border-t border-token-border pt-2 text-center font-medium leading-snug`,children:t}),e[1]=t,e[2]=i):i=e[2];return i}";
-      const functionIndex = source.indexOf("function mu(e)");
-      if (functionIndex >= 0) {
-        source = source.slice(0, functionIndex) + helper + source.slice(functionIndex);
+    if (source.includes("function ChainCloudContextBilling()")) {
+      const helperStart = source.indexOf("function ChainCloudContextBilling()");
+      const helperEnd = helperStart >= 0 ? source.indexOf("function mu(e)", helperStart) : -1;
+      if (helperStart >= 0 && helperEnd > helperStart) {
+        source = source.slice(0, helperStart) + source.slice(helperEnd);
         changed = true;
       }
     }
 
     const tooltipNeedle = "D=(0,$.jsx)(Tn,{side:`left`,tooltipContent:p,children:E})";
-    if (source.includes(tooltipNeedle) && source.includes("ChainCloudContextBilling")) {
-      source = source.replace(
-        tooltipNeedle,
-        "D=(0,$.jsx)(Tn,{side:`left`,tooltipContent:p?(0,$.jsxs)($.Fragment,{children:[p,(0,$.jsx)(ChainCloudContextBilling,{})]}):(0,$.jsx)(ChainCloudContextBilling,{}),children:E})",
-      );
+    const fakeTooltip =
+      "D=(0,$.jsx)(Tn,{side:`left`,tooltipContent:p?(0,$.jsxs)($.Fragment,{children:[p,(0,$.jsx)(ChainCloudContextBilling,{})]}):(0,$.jsx)(ChainCloudContextBilling,{}),children:E})";
+    if (source.includes(fakeTooltip)) {
+      source = source.replace(fakeTooltip, tooltipNeedle);
       changed = true;
     }
 
@@ -1189,45 +1201,6 @@ function patchLocalThreadBundles(platform, isCheck) {
   return touched;
 }
 
-function patchAgentSettingsBundle(platform, isCheck) {
-  const root = appRootFor(platform);
-  const assetsDir = path.join(root, "webview", "assets");
-  if (!fs.existsSync(assetsDir)) return { file: null, changed: false };
-  const fileName = fs.readdirSync(assetsDir).find((name) => /^agent-settings-.*\.js$/.test(name));
-  if (!fileName) return { file: null, changed: false };
-  const file = path.join(assetsDir, fileName);
-  let source = read(file);
-  if (source.includes("function ChainCloudApiKeySettingsRow()")) return { file, changed: false };
-
-  const reactHookMatch = source.match(/var\s+(\w+)=y\(\),(\w+)=e\(s\(\),1\);/) || source.match(/var\s+(\w+)=_\(\),(\w+)=e\(s\(\),1\);/);
-  if (!reactHookMatch) throw new Error("Unable to locate AgentSettings React aliases");
-  const memoCache = reactHookMatch[1];
-  const reactName = reactHookMatch[2];
-  const jsxFactory = matchOne(source, /import\{n as \w+,t as (\w+)\}from"\.\/jsx-runtime-[^"]+\.js"/, "jsx factory alias")[1];
-  const jsxName = matchOne(source, new RegExp(`var\\s+(\\w+)=${jsxFactory}\\(\\)`), "jsx alias")[1];
-  const intlName = matchOne(source, /import\{[^}]*W as (\w+)[^}]*\}from"\.\/setting-storage-[^"]+\.js"/, "settings intl alias")[1];
-  const rowName = matchOne(source, /import\{n as (\w+)\}from"\.\/settings-row-[^"]+\.js"/, "settings row alias")[1];
-  const dropdownMatch = matchOne(source, /import\{r as (\w+),t as (\w+)\}from"\.\/dropdown-[^"]+\.js"/, "dropdown aliases");
-  const dropdownRoot = dropdownMatch[1];
-  const dropdownMenu = dropdownMatch[2];
-  const checkIcon = matchOne(source, /import\{t as (\w+)\}from"\.\/check-md-[^"]+\.js"/, "check icon alias")[1];
-  const sharedMatch = matchOne(source, /import\{i as (\w+),t as (\w+)\}from"\.\/settings-shared-[^"]+\.js"/, "settings shared aliases");
-  const sharedButton = sharedMatch[2];
-
-  const helper = `function ChainCloudApiKeyId(e){return String(e?.id??e?.key??\`\`)}function ChainCloudApiKeyLabel(e){let t=e?.name||\`Key\`,n=String(e?.key||\`\`),r=n.length>12?n.slice(0,7)+\`...\`+n.slice(-4):n;return r?\`\${t} (\${r})\`:t}function ChainCloudApiKeyList(e){let t=Array.isArray(e)?e:Array.isArray(e?.items)?e.items:Array.isArray(e?.data)?e.data:Array.isArray(e?.records)?e.records:[];return t.filter(e=>e&&e.key&&(e.status==null||e.status===\`active\`))}function ChainCloudApiKeySettingsRow(){let e=window.__chaincloudCodexAuth,t=${intlName}(),n=${reactName}.useState([]),r=n[0],i=n[1],a=${reactName}.useState(()=>e?.getSession?.()??null),o=a[0],s=a[1],c=${reactName}.useState(!1),l=c[0],u=c[1],d=${reactName}.useState(null),p=d[0],m=d[1],h=${reactName}.useCallback(async()=>{if(!e?.isLoggedIn?.()){i([]),s(null);return}u(!0),m(null);try{let t=ChainCloudApiKeyList(await e.listKeys?.());i(t);let n=e.getSession?.()??null;if(!n?.selectedApiKey&&t[0])await e.switchDesktopApiKey?.(t[0]),n=e.getSession?.()??n;s(n)}catch(e){m(e?.message||String(e))}finally{u(!1)}},[e]);${reactName}.useEffect(()=>{h();let t=()=>{s(e?.getSession?.()??null),h()};return window.addEventListener(\`chaincloud-auth-changed\`,t),window.addEventListener(\`chaincloud-api-key-selected\`,t),()=>{window.removeEventListener(\`chaincloud-auth-changed\`,t),window.removeEventListener(\`chaincloud-api-key-selected\`,t)}},[h,e]);if(!e?.isLoggedIn?.())return null;let g=ChainCloudApiKeyId(o?.selectedApiKey),_=r.find(e=>ChainCloudApiKeyId(e)===g)||r[0]||null,v=_?ChainCloudApiKeyId(_):g,y=l||r.length===0,b=p?(0,${jsxName}.jsx)(\`div\`,{className:\`text-sm text-token-error-foreground\`,children:p}):null;return(0,${jsxName}.jsx)(${rowName},{label:\`API \\u5bc6\\u94a5\`,description:(0,${jsxName}.jsxs)(\`div\`,{className:\`flex flex-col gap-1\`,children:[(0,${jsxName}.jsx)(\`div\`,{children:\`\\u9009\\u62e9\\u5f53\\u524d\\u7528\\u4e8e\\u8bf7\\u6c42\\u7684\\u94fe\\u8def\\u4e91 API \\u5bc6\\u94a5\`}),b]}),control:(0,${jsxName}.jsx)(${dropdownMenu},{align:\`end\`,contentWidth:\`panelWide\`,disabled:y,triggerButton:(0,${jsxName}.jsx)(${sharedButton},{disabled:y,contentClassName:\`truncate\`,children:l?\`\\u52a0\\u8f7d Key...\`:_?ChainCloudApiKeyLabel(_):\`\\u65e0\\u53ef\\u7528 Key\`}),children:r.map(e=>{let n=ChainCloudApiKeyId(e);return(0,${jsxName}.jsx)(${dropdownRoot}.Item,{RightIcon:n===v?${checkIcon}:void 0,onSelect:()=>{u(!0),m(null),Promise.resolve(window.__chaincloudCodexAuth?.switchDesktopApiKey?.(e)).then(()=>{s(window.__chaincloudCodexAuth?.getSession?.()??null),h()}).catch(e=>m(e?.message||String(e))).finally(()=>u(!1))},children:(0,${jsxName}.jsx)(\`span\`,{className:\`text-sm\`,children:ChainCloudApiKeyLabel(e)})},n)})})})}`;
-  const functionNeedleMatch = source.match(/function\s+\w+\(\{hostId:e\}\)\{[\s\S]{0,9000}?settings\.agent\.configuration\.approval\.label/);
-  if (!functionNeedleMatch) throw new Error("Unable to locate AgentSettings configuration component");
-  const functionNeedle = functionNeedleMatch[0].match(/function\s+\w+\(\{hostId:e\}\)/)[0];
-  source = source.replace(functionNeedle, helper + functionNeedle);
-
-  const rowNeedle = `(0,${jsxName}.jsx)(${rowName},{label:(0,${jsxName}.jsx)(l,{id:\`settings.agent.configuration.approval.label\``;
-  if (!source.includes(rowNeedle)) throw new Error("Unable to locate approval policy settings row");
-  source = source.replace(rowNeedle, `(0,${jsxName}.jsx)(ChainCloudApiKeySettingsRow,{}),` + rowNeedle);
-
-  if (!isCheck) write(file, source);
-  return { file, changed: true };
-}
-
 function main() {
   const args = process.argv.slice(2);
   const isCheck = args.includes("--check");
@@ -1249,6 +1222,7 @@ function main() {
     const login = patchLoginRoute(plat, isCheck);
     const profileTouched = patchProfileBundles(plat, isCheck);
     const composerTouched = patchComposerBundles(plat, isCheck);
+    const billingTooltipTouched = patchBillingTooltipBundles(plat, isCheck);
     const localThreadTouched = patchLocalThreadBundles(plat, isCheck);
     const agentSettings = patchAgentSettingsBundle(plat, isCheck);
 
@@ -1277,6 +1251,11 @@ function main() {
       console.log(`   * composer: ${relPath(file)}`);
     }
     if (composerTouched.length === 0) console.log("   [ok] composer: already patched or not present");
+    for (const file of billingTooltipTouched) {
+      changedCount++;
+      console.log(`   * billing-tooltip: ${relPath(file)}`);
+    }
+    if (billingTooltipTouched.length === 0) console.log("   [ok] billing-tooltip: already patched or not present");
     for (const file of localThreadTouched) {
       changedCount++;
       console.log(`   * local-thread: ${relPath(file)}`);
