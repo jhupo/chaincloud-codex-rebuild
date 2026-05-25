@@ -31,17 +31,13 @@ function ensureProviderLink(source) {
 
 function ensureFooterBilling(source) {
   let changed = false;
-  const helper =
-    "function ChainCloudFooterBilling(){let e=(0,$.c)(9),t=window.__chaincloudCodexAuth,n=t?.billingPopoverText?.()||t?.billingText?.()||`\\u4eca\\u65e5\\u6d88\\u8d39 -- \\u00b7 \\u5269\\u4f59\\u91d1\\u989d --`,[r,i]=(0,Z.useState)(n),a=t?.isLoggedIn?.()===!0,o;e[0]!==t?(o=()=>{let e=()=>{i(t?.billingPopoverText?.()||t?.billingText?.()||n)};e();let r=window.setInterval(e,15e3);return()=>window.clearInterval(r)},e[0]=t,e[1]=o):o=e[1],(0,Z.useEffect)(o,[t]);if(!a)return null;let s;e[2]===Symbol.for(`react.memo_cache_sentinel`)?(s=()=>{window.__chaincloudCodexAuth?.showRechargeDialog?.()},e[2]=s):s=e[2];let c;e[3]!==r||e[4]!==s?(c=(0,Q.jsx)(`button`,{type:`button`,className:`h-token-button-composer max-w-56 truncate rounded-full px-2 py-0 text-sm leading-[18px] text-token-description-foreground hover:text-token-foreground`,onClick:s,title:r,children:r}),e[3]=r,e[4]=s,e[5]=c):c=e[5];return c}\n";
-  if (source.includes("function ChainCloudFooterBilling()") && !source.includes(helper)) {
-    const result = replaceFunctionBefore(source, "ChainCloudFooterBilling()", "Um(e)", "");
-    source = result.source;
-    changed = changed || result.changed;
-  }
-  const insertAt = source.indexOf("function Um(e){");
-  if (insertAt >= 0 && !source.includes("function ChainCloudFooterBilling()")) {
-    source = source.slice(0, insertAt) + helper + source.slice(insertAt);
-    changed = true;
+  if (source.includes("function ChainCloudFooterBilling()")) {
+    const helperStart = source.indexOf("function ChainCloudFooterBilling(){");
+    const helperEnd = helperStart >= 0 ? source.indexOf("function Um(e){", helperStart + 1) : -1;
+    if (helperEnd > helperStart) {
+      source = source.slice(0, helperStart) + source.slice(helperEnd);
+      changed = true;
+    }
   }
 
   while (source.includes("children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]")) {
@@ -51,9 +47,12 @@ function ensureFooterBilling(source) {
     );
     changed = true;
   }
-  if (source.includes("children:[P,F,r,I]")) {
-    source = source.replace("children:[P,F,r,I]", "children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]");
+  if (source.includes("children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]")) {
+    source = source.replace("children:[P,(0,Q.jsx)(ChainCloudFooterBilling,{}),F,r,I]", "children:[P,F,r,I]");
     changed = true;
+  }
+  if (source.includes("ChainCloudFooterBilling")) {
+    throw new Error("Failed to remove ChainCloud footer billing");
   }
 
   return { source, changed };

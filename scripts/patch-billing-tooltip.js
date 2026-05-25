@@ -1,6 +1,7 @@
 const { appRootFor, fs, path, read, write } = require("./patch-util");
 
-const BILLING_FALLBACK = "\\u4eca\\u65e5\\u6d88\\u8d39 -- \\u00b7 \\u5269\\u4f59\\u91d1\\u989d --";
+const OLD_BILLING_FALLBACK = "\\u4eca\\u65e5\\u6d88\\u8d39 -- \\u00b7 \\u5269\\u4f59\\u91d1\\u989d --";
+const BILLING_FALLBACK = "\\u4eca\\u65e5 -- \\u00b7 \\u4f59\\u989d --";
 
 function patchBillingTooltipBundles(platform, isCheck) {
   return [
@@ -61,6 +62,10 @@ function patchNativeContextTooltip(platform, isCheck) {
     const file = path.join(assetsDir, name);
     let source = read(file);
     const original = source;
+
+    if (source.includes(OLD_BILLING_FALLBACK)) {
+      source = source.replaceAll(OLD_BILLING_FALLBACK, BILLING_FALLBACK);
+    }
 
     if (!source.includes("function ChainCloudContextBillingTooltip()")) {
       const marker = "function mu(e){";

@@ -125,6 +125,17 @@ function patchServiceTierSettings(source) {
   return { source, changed };
 }
 
+function patchComposerFastIndicator(source) {
+  let changed = false;
+  const from = "L=I!=null&&Se(e,F)";
+  const to = "L=I!=null&&(F===`fast`||Se(e,F))";
+  if (source.includes(from)) {
+    source = source.replace(from, to);
+    changed = true;
+  }
+  return { source, changed };
+}
+
 function main() {
   const args = process.argv.slice(2);
   const isCheck = args.includes("--check");
@@ -160,6 +171,7 @@ function main() {
   let totalPatched = 0;
   let totalTierGatesPatched = 0;
   let totalTierSettingsPatched = 0;
+  let totalComposerIndicatorsPatched = 0;
 
   for (const bundle of targets) {
     const source = fs.readFileSync(bundle.path, "utf-8");
@@ -231,11 +243,28 @@ function main() {
     }
   }
 
-  if (totalPatched > 0 || totalTierGatesPatched > 0 || totalTierSettingsPatched > 0) {
+  for (const plat of platforms) {
+    const assetsDir = path.join(SRC_DIR, plat, "_asar", "webview", "assets");
+    if (!fs.existsSync(assetsDir)) continue;
+    for (const f of fs.readdirSync(assetsDir)) {
+      if (!/^composer-(?!atoms-).*\.js$/.test(f)) continue;
+      const fp = path.join(assetsDir, f);
+      const source = fs.readFileSync(fp, "utf-8");
+      const result = patchComposerFastIndicator(source);
+      if (!result.changed) continue;
+      console.log(`  [${plat}] ${relPath(fp)}`);
+      console.log("    * show fast service tier indicator in composer");
+      if (!isCheck) fs.writeFileSync(fp, result.source, "utf-8");
+      totalComposerIndicatorsPatched += 1;
+    }
+  }
+
+  if (totalPatched > 0 || totalTierGatesPatched > 0 || totalTierSettingsPatched > 0 || totalComposerIndicatorsPatched > 0) {
     const bits = [];
     if (totalPatched > 0) bits.push(`${totalPatched} auth gate(s) removed`);
     if (totalTierGatesPatched > 0) bits.push(`${totalTierGatesPatched} model tier gate(s) opened`);
     if (totalTierSettingsPatched > 0) bits.push(`${totalTierSettingsPatched} service tier list(s) opened`);
+    if (totalComposerIndicatorsPatched > 0) bits.push(`${totalComposerIndicatorsPatched} composer fast indicator(s) patched`);
     console.log(`  [ok] ${bits.join(", ")}`);
   } else {
     console.log("  [ok] fast_mode auth gates already patched or absent");
