@@ -7,6 +7,7 @@ const {
   CHAINCLOUD_LOGOUT_IPC_CHANNEL,
   CHAINCLOUD_OPENAI_BASE_URL,
   CHAINCLOUD_ORIGIN,
+  CHAINCLOUD_PROVIDER_ID,
 } = require("./constants");
 function patchMainProxy(platform, isCheck) {
   const root = appRootFor(platform);
@@ -39,6 +40,7 @@ var __chaincloudAuthIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_IPC_CHANNEL)};
 var __chaincloudConfigIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_CONFIG_IPC_CHANNEL)};
 var __chaincloudLoginIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_LOGIN_IPC_CHANNEL)};
 var __chaincloudLogoutIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_LOGOUT_IPC_CHANNEL)};
+var __chaincloudProviderIdV10 = ${JSON.stringify(CHAINCLOUD_PROVIDER_ID)};
 var __chaincloudLoginPartitionV10 = "chaincloud-login";
 var __chaincloudLoginViewV10 = null;
 var __chaincloudLoginPromiseV10 = null;
@@ -81,12 +83,13 @@ function __chaincloudRemoveTomlTableV10(source, tableName) {
 }
 function __chaincloudEnsureConfigTextV10(source) {
   let text = String(source || "").replace(/\\r\\n/g, "\\n");
-  text = __chaincloudSetTomlScalarV10(text, "model_provider", "openai");
+  text = __chaincloudSetTomlScalarV10(text, "model_provider", __chaincloudProviderIdV10);
   text = __chaincloudRemoveTomlTableV10(text, "model_providers.openai");
+  text = __chaincloudRemoveTomlTableV10(text, "model_providers." + __chaincloudProviderIdV10);
   text = text.replace(/\\s+$/, "");
   let table = [
     "",
-    "[model_providers.openai]",
+    "[model_providers." + __chaincloudProviderIdV10 + "]",
     "name = " + __chaincloudTomlStringV10("\\u94fe\\u8def\\u4e91"),
     "base_url = " + __chaincloudTomlStringV10(${JSON.stringify(CHAINCLOUD_OPENAI_BASE_URL)}),
     "wire_api = " + __chaincloudTomlStringV10("responses"),

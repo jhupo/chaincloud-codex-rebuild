@@ -1,6 +1,7 @@
 const CHAINCLOUD_ORIGIN = "https://dash.classicriver.cn";
 const CHAINCLOUD_API_BASE = `${CHAINCLOUD_ORIGIN}/api/v1`;
 const CHAINCLOUD_OPENAI_BASE_URL = `${CHAINCLOUD_ORIGIN}/v1`;
+const CHAINCLOUD_PROVIDER_ID = "chaincloud";
 const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 const QR_IMAGE_ORIGIN = "https://api.qrserver.com";
 const CHAINCLOUD_IPC_CHANNEL = "codex_desktop:chaincloud-auth-request";
@@ -18,6 +19,7 @@ module.exports = {
   CHAINCLOUD_LOGOUT_IPC_CHANNEL,
   CHAINCLOUD_OPENAI_BASE_URL,
   CHAINCLOUD_ORIGIN,
+  CHAINCLOUD_PROVIDER_ID,
   CLIENT_FILE,
   PATCH_MARKER,
   QR_IMAGE_ORIGIN,

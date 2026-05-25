@@ -2,6 +2,7 @@ const {
   CHAINCLOUD_API_BASE,
   CHAINCLOUD_OPENAI_BASE_URL,
   CHAINCLOUD_ORIGIN,
+  CHAINCLOUD_PROVIDER_ID,
   PATCH_MARKER,
 } = require("./constants");
 
@@ -10,6 +11,7 @@ function jsClientSource() {
 (function(){
   const API_BASE = ${JSON.stringify(CHAINCLOUD_API_BASE)};
   const OPENAI_BASE_URL = ${JSON.stringify(CHAINCLOUD_OPENAI_BASE_URL)};
+  const PROVIDER_ID = ${JSON.stringify(CHAINCLOUD_PROVIDER_ID)};
   const STORAGE_KEY = "chaincloud.codex.session.v1";
   const DESKTOP_KEY_NAME = "Codex Desktop";
 
@@ -51,10 +53,10 @@ function jsClientSource() {
   function isLoggedIn(){ return !!getSession()?.accessToken; }
   function codexConfigEdits(){
     return [
-      { keyPath: "model_provider", value: "openai", mergeStrategy: "upsert" },
-      { keyPath: "model_providers.openai.name", value: "\\u94fe\\u8def\\u4e91", mergeStrategy: "upsert" },
-      { keyPath: "model_providers.openai.base_url", value: OPENAI_BASE_URL, mergeStrategy: "upsert" },
-      { keyPath: "model_providers.openai.wire_api", value: "responses", mergeStrategy: "upsert" }
+      { keyPath: "model_provider", value: PROVIDER_ID, mergeStrategy: "upsert" },
+      { keyPath: "model_providers." + PROVIDER_ID + ".name", value: "\\u94fe\\u8def\\u4e91", mergeStrategy: "upsert" },
+      { keyPath: "model_providers." + PROVIDER_ID + ".base_url", value: OPENAI_BASE_URL, mergeStrategy: "upsert" },
+      { keyPath: "model_providers." + PROVIDER_ID + ".wire_api", value: "responses", mergeStrategy: "upsert" }
     ];
   }
   function codexConfigPayload(){
@@ -561,6 +563,7 @@ function jsClientSource() {
   window.__chaincloudCodexAuth = {
     apiBase: API_BASE,
     openaiBaseUrl: OPENAI_BASE_URL,
+    providerId: PROVIDER_ID,
     storageKey: STORAGE_KEY,
     codexConfigEdits,
     codexConfigPayload,

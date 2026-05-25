@@ -1,5 +1,5 @@
 const { appRootFor, fs, path, read, write } = require("../patch-util");
-const { CHAINCLOUD_ORIGIN } = require("./constants");
+const { CHAINCLOUD_ORIGIN, CHAINCLOUD_PROVIDER_ID } = require("./constants");
 
 function replaceFunctionBefore(source, functionName, nextFunctionName, replacement) {
   const start = source.indexOf(`function ${functionName}`);
@@ -59,6 +59,32 @@ function ensureFooterBilling(source) {
   return { source, changed };
 }
 
+function ensureProviderName(source) {
+  let changed = false;
+  const legacyNeedle = "if(t===`openai`)return `\\u94fe\\u8def\\u4e91`;";
+  const legacyLiteralNeedle = "if(t===`openai`)return `链路云`;";
+  const replacement = `if(t===\`${CHAINCLOUD_PROVIDER_ID}\`||t===\`openai\`)return \`\\u94fe\\u8def\\u4e91\`;`;
+  if (source.includes(legacyNeedle) || source.includes(legacyLiteralNeedle)) {
+    source = source.replace(legacyNeedle, replacement).replace(legacyLiteralNeedle, replacement);
+    changed = true;
+  }
+  const providerNeedle = "let t=e.model_provider;if(t==null||t.length===0)return null;";
+  if (source.includes(providerNeedle) && !source.includes(`t===\`${CHAINCLOUD_PROVIDER_ID}\``)) {
+    source = source.replace(providerNeedle, providerNeedle + replacement);
+    changed = true;
+  }
+  return { source, changed };
+}
+
+function ensureIdeContextIndicator(source) {
+  if (source.includes("function Em(e,t){return !0}")) return { source, changed: false };
+  if (!source.includes("function Em(e,t){return e&&t}")) return { source, changed: false };
+  return {
+    source: source.replace("function Em(e,t){return e&&t}", "function Em(e,t){return !0}"),
+    changed: true,
+  };
+}
+
 function patchComposerBundles(platform, isCheck) {
   const root = appRootFor(platform);
   const assetsDir = path.join(root, "webview", "assets");
@@ -87,14 +113,10 @@ function patchComposerBundles(platform, isCheck) {
       source = source.replace(staleComposerSwitcher, "let k=O,A=o?.authMethod===`copilot`,");
       changed = true;
     }
-    const providerNeedle = "let t=e.model_provider;if(t==null||t.length===0)return null;";
-    if (source.includes(providerNeedle) && !source.includes("t===`openai`)return `\u94fe\u8def\u4e91`")) {
-      source = source.replace(
-        providerNeedle,
-        "let t=e.model_provider;if(t==null||t.length===0)return null;if(t===`openai`)return `\u94fe\u8def\u4e91`;",
-      );
-      changed = true;
-    }
+    const providerName = ensureProviderName(source);
+    source = providerName.source;
+    changed = changed || providerName.changed;
+
     const providerLink = ensureProviderLink(source);
     source = providerLink.source;
     changed = changed || providerLink.changed;
@@ -102,6 +124,10 @@ function patchComposerBundles(platform, isCheck) {
     const footerBilling = ensureFooterBilling(source);
     source = footerBilling.source;
     changed = changed || footerBilling.changed;
+
+    const ideContextIndicator = ensureIdeContextIndicator(source);
+    source = ideContextIndicator.source;
+    changed = changed || ideContextIndicator.changed;
     if (changed) {
       if (!isCheck) write(file, source);
       touched.push(file);
