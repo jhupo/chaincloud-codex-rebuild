@@ -81,7 +81,7 @@ function patchProfileBundleFile(file, isCheck) {
   if (loginRow.test(source) && !source.includes("chaincloud-recharge-profile")) {
     source = source.replace(
       loginRow,
-        "Be=(0,Q.jsxs)(Q.Fragment,{children:[window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},LeftIcon:Xu,children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,(window.__chaincloudCodexAuth?.isLoggedIn?.()?f:!0)&&(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.isLoggedIn?.()?Ha(r,rd,{onConfirm:we}):window.__chaincloudCodexAuth?.showLoginModal?.({onSuccess:async({key:e})=>{await window.__chaincloudCodexSwitchApiKey?.(e.key)}})},LeftIcon:Qs,children:window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(X,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`}):`\u767b\u5f55`},`chaincloud-login-profile`)]})",
+        "Be=(0,Q.jsxs)(Q.Fragment,{children:[window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},LeftIcon:Xu,children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,(0,Q.jsx)(jo,{onClick:()=>{o(!1),s(`/settings/general-settings`)},LeftIcon:Xu,children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`),(window.__chaincloudCodexAuth?.isLoggedIn?.()?f:!0)&&(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.isLoggedIn?.()?Ha(r,rd,{onConfirm:we}):window.__chaincloudCodexAuth?.showLoginModal?.({onSuccess:async({key:e})=>{await window.__chaincloudCodexSwitchApiKey?.(e.key)}})},LeftIcon:Qs,children:window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(X,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`}):`\u767b\u5f55`},`chaincloud-login-profile`)]})",
     );
     changed = true;
   }
@@ -153,12 +153,29 @@ function patchProfileBundleFile(file, isCheck) {
     const rechargeNeedle = "let Ft;t[147]!==xt||t[148]!==g||t[149]!==i||t[150]!==c?(Ft=g&&(0,Z.jsx)(K,{onClick:()=>{c(!1),be(i,Jt,{onConfirm:xt})},LeftIcon:Ze,children:(0,Z.jsx)(C,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`})}),t[147]=xt,t[148]=g,t[149]=i,t[150]=c,t[151]=Ft):Ft=t[151];";
     const rechargeReplacement =
       rechargeNeedle +
-      "let Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null;";
+      "let Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,ChainCloudSettingsProfile=(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),u(`/settings/general-settings`,{state:q})},children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`);";
     if (source.includes(rechargeNeedle)) {
       source = source.replace(rechargeNeedle, rechargeReplacement);
       source = source.replace(
         "t[157]!==Nt||t[158]!==Pt||t[159]!==Ft?(It=(0,Z.jsxs)(`div`,{className:`flex w-full min-w-0 flex-col gap-0`,children:[Q,$,Et,kt,At,Nt,Pt,Ft]}),t[152]=Q,t[153]=$,t[154]=Et,t[155]=kt,t[156]=At,t[157]=Nt,t[158]=Pt,t[159]=Ft,t[160]=It):It=t[160];",
+        "t[157]!==Nt||t[158]!==Pt||t[159]!==Ft||t[166]!==Rt||t[167]!==ChainCloudSettingsProfile?(It=(0,Z.jsxs)(`div`,{className:`flex w-full min-w-0 flex-col gap-0`,children:[Q,$,Et,kt,At,Nt,Pt,Rt,ChainCloudSettingsProfile,Ft]}),t[152]=Q,t[153]=$,t[154]=Et,t[155]=kt,t[156]=At,t[157]=Nt,t[158]=Pt,t[159]=Ft,t[166]=Rt,t[167]=ChainCloudSettingsProfile,t[160]=It):It=t[160];",
+      );
+      changed = true;
+    }
+  }
+
+  if (source.includes("profile-dropdown") && source.includes("chaincloud-recharge-profile") && !source.includes("chaincloud-settings-profile")) {
+    const rechargeOnly =
+      "let Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null;";
+    if (source.includes(rechargeOnly)) {
+      source = source.replace(
+        rechargeOnly,
+        rechargeOnly.slice(0, -1) +
+          ",ChainCloudSettingsProfile=(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),u(`/settings/general-settings`,{state:q})},children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`);",
+      );
+      source = source.replace(
         "t[157]!==Nt||t[158]!==Pt||t[159]!==Ft||t[166]!==Rt?(It=(0,Z.jsxs)(`div`,{className:`flex w-full min-w-0 flex-col gap-0`,children:[Q,$,Et,kt,At,Nt,Pt,Rt,Ft]}),t[152]=Q,t[153]=$,t[154]=Et,t[155]=kt,t[156]=At,t[157]=Nt,t[158]=Pt,t[159]=Ft,t[166]=Rt,t[160]=It):It=t[160];",
+        "t[157]!==Nt||t[158]!==Pt||t[159]!==Ft||t[166]!==Rt||t[167]!==ChainCloudSettingsProfile?(It=(0,Z.jsxs)(`div`,{className:`flex w-full min-w-0 flex-col gap-0`,children:[Q,$,Et,kt,At,Nt,Pt,Rt,ChainCloudSettingsProfile,Ft]}),t[152]=Q,t[153]=$,t[154]=Et,t[155]=kt,t[156]=At,t[157]=Nt,t[158]=Pt,t[159]=Ft,t[166]=Rt,t[167]=ChainCloudSettingsProfile,t[160]=It):It=t[160];",
       );
       changed = true;
     }
