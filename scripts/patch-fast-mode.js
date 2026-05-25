@@ -47,9 +47,9 @@ function collectPatches(ast, source) {
     const fnSrc = source.slice(node.start, node.end);
     if (!fnSrc.includes("authMethod") || !fnSrc.includes("fast_mode")) return;
 
-    // Inside this function, find: X.authMethod !== `chatgpt`
+    // Inside this function, find ChatGPT-only auth gates around authMethod.
     walk(node, (child) => {
-      if (child.type !== "BinaryExpression" || child.operator !== "!==") return;
+      if (child.type !== "BinaryExpression" || !["!==", "===", "!="].includes(child.operator)) return;
 
       const childSrc = source.slice(child.start, child.end);
       if (!childSrc.includes("authMethod") || !childSrc.includes("chatgpt"))
@@ -64,7 +64,7 @@ function collectPatches(ast, source) {
         id: "fast_mode_auth_gate",
         start: child.start,
         end: child.end,
-        replacement: "!1",
+        replacement: child.operator === "===" ? "!0" : "!1",
         original: childSrc,
       });
     });
@@ -130,6 +130,7 @@ function main() {
       for (const p of patches) {
         console.log(`    [?] offset ${p.start}: ${p.original} -> ${p.replacement}`);
       }
+      totalPatched += patches.length;
       continue;
     }
 

@@ -36,6 +36,11 @@ const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(PROJECT_ROOT, "src");
 const TEMP_DIR = path.join(require("os").tmpdir(), "codex-sync");
 const VERSION_FILE = path.join(__dirname, ".versions.json");
+const ASAR_BIN_CANDIDATES = [
+  path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "asar.cmd" : "asar"),
+  path.join(PROJECT_ROOT, "node_modules", ".bin", "asar"),
+  path.join(PROJECT_ROOT, "node_modules", "@electron", "asar", "bin", "asar.mjs"),
+];
 
 const APPCAST_ARM64 = "https://persistent.oaistatic.com/codex-app-prod/appcast.xml";
 const APPCAST_X64 = "https://persistent.oaistatic.com/codex-app-prod/appcast-x64.xml";
@@ -80,8 +85,21 @@ function extractArchive(archive, dest) {
         if (fs.readdirSync(dest).length > 0) return;
       }
     }
+    try {
+      execSync(`tar -xf "${archive}" -C "${dest}"`, { stdio: "pipe" });
+      if (fs.readdirSync(dest).length > 0) return;
+    } catch {}
     throw new Error(`Failed to extract ${archive}`);
   }
+}
+
+function runAsar(args) {
+  const asarBin = ASAR_BIN_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  if (!asarBin) throw new Error("Local @electron/asar CLI not found. Run npm ci first.");
+  const command = asarBin.endsWith(".mjs")
+    ? `"${process.execPath}" "${asarBin}"`
+    : `"${asarBin}"`;
+  execSync(`${command} ${args.map((arg) => `"${arg}"`).join(" ")}`, { stdio: "inherit" });
 }
 
 function findFile(dir, name) {
@@ -223,7 +241,7 @@ function assembleOutput(resourcesDir, destDir, label) {
   // 1. Extract app.asar → _asar/ (for patching)
   const asarDest = path.join(destDir, "_asar");
   console.log("   [asar extract] -> _asar/");
-  execSync(`npx asar extract "${asarPath}" "${asarDest}"`);
+  runAsar(["extract", asarPath, asarDest]);
 
   // 2. Copy app.asar.unpacked/ as-is (native modules)
   const unpackedSrc = path.join(resourcesDir, "app.asar.unpacked");
@@ -269,6 +287,7 @@ async function main() {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 
   const results = {};
+  const failures = [];
 
   // Detect versions
   if (!SKIP_MAC) {
@@ -302,17 +321,21 @@ async function main() {
   if (!SKIP_MAC && results["mac-arm64"]) {
     try {
       results["mac-arm64"] = await syncMac("arm64", APPCAST_ARM64, path.join(SRC_DIR, "mac-arm64"));
-    } catch (e) { console.error(`   [x] mac-arm64: ${e.message}`); }
+    } catch (e) { failures.push(`mac-arm64: ${e.message}`); console.error(`   [x] mac-arm64: ${e.message}`); delete results["mac-arm64"]; }
   }
   if (!SKIP_MAC && results["mac-x64"]) {
     try {
       results["mac-x64"] = await syncMac("x64", APPCAST_X64, path.join(SRC_DIR, "mac-x64"));
-    } catch (e) { console.error(`   [x] mac-x64: ${e.message}`); }
+    } catch (e) { failures.push(`mac-x64: ${e.message}`); console.error(`   [x] mac-x64: ${e.message}`); delete results["mac-x64"]; }
   }
   if (!SKIP_WIN && results.win) {
     try {
       results.win = await syncWin(path.join(SRC_DIR, "win"));
-    } catch (e) { console.error(`   [x] win: ${e.message}`); }
+    } catch (e) { failures.push(`win: ${e.message}`); console.error(`   [x] win: ${e.message}`); delete results.win; }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(`Sync failed: ${failures.join("; ")}`);
   }
 
   const saved = loadVersions();

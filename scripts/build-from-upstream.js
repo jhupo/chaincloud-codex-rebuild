@@ -17,6 +17,11 @@ const { execSync, execFileSync } = require("child_process");
 const PROJECT_ROOT = path.resolve(__dirname, "..");
 const SRC_DIR = path.join(PROJECT_ROOT, "src");
 const OUT_DIR = path.join(PROJECT_ROOT, "out");
+const ASAR_BIN_CANDIDATES = [
+  path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "asar.cmd" : "asar"),
+  path.join(PROJECT_ROOT, "node_modules", ".bin", "asar"),
+  path.join(PROJECT_ROOT, "node_modules", "@electron", "asar", "bin", "asar.mjs"),
+];
 
 const TARGET_TRIPLE_MAP = {
   "mac-arm64": "aarch64-apple-darwin",
@@ -29,6 +34,15 @@ const TARGET_TRIPLE_MAP = {
 function clearDir(dir) {
   if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
   fs.mkdirSync(dir, { recursive: true });
+}
+
+function runAsar(args) {
+  const asarBin = ASAR_BIN_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  if (!asarBin) throw new Error("Local @electron/asar CLI not found. Run npm ci first.");
+  const command = asarBin.endsWith(".mjs")
+    ? `"${process.execPath}" "${asarBin}"`
+    : `"${asarBin}"`;
+  execSync(`${command} ${args.map((arg) => `"${arg}"`).join(" ")}`, { stdio: "inherit" });
 }
 
 function createZipFromDir(sourceDir, zipPath) {
@@ -239,7 +253,7 @@ function buildMac(platform) {
   // 3. Repack patched ASAR
   const asarPath = path.join(resourcesDir, "app.asar");
   console.log("   [asar pack] _asar/ -> app.asar");
-  execSync(`npx asar pack "${asarDir}" "${asarPath}"`);
+  runAsar(["pack", asarDir, asarPath]);
 
   // 4. Update ASAR integrity hash in Info.plist
   const infoPlist = path.join(outApp, "Contents", "Info.plist");
@@ -312,7 +326,7 @@ function buildWin(platform) {
 
   // Repack patched ASAR
   console.log("   [asar pack] _asar/ -> app.asar");
-  execSync(`npx asar pack "${asarDir}" "${asarPath}"`);
+  runAsar(["pack", asarDir, asarPath]);
 
   // Compute new hash and patch exe
   const newHash = computeAsarHeaderHash(asarPath);

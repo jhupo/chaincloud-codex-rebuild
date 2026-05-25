@@ -35,7 +35,11 @@ function patchMainProxy(platform, isCheck) {
   source = source.slice(0, stripStart) + source.slice(markerIndex);
 
   const proxy = `
-var __CHAINCLOUD_AUTH_PROXY_V10__ = true;
+var __CHAINCLOUD_AUTH_PROXY_V11__ = true;
+var __chaincloudElectronV11 = require("electron");
+var __chaincloudPathV11 = require("path");
+var __chaincloudOsV11 = require("os");
+var __chaincloudFsPromisesV11 = require("fs").promises;
 var __chaincloudAuthIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_IPC_CHANNEL)};
 var __chaincloudConfigIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_CONFIG_IPC_CHANNEL)};
 var __chaincloudLoginIpcChannelV10 = ${JSON.stringify(CHAINCLOUD_LOGIN_IPC_CHANNEL)};
@@ -62,7 +66,7 @@ function __chaincloudReadSiteSessionV10(webContents) {
   })()\`, true);
 }
 function __chaincloudRemoveHandlerV10(channel) {
-  try { n.ipcMain.removeHandler(channel); } catch {}
+  try { __chaincloudElectronV11.ipcMain.removeHandler(channel); } catch {}
 }
 function __chaincloudTomlStringV10(value) {
   return JSON.stringify(String(value));
@@ -98,20 +102,20 @@ function __chaincloudEnsureConfigTextV10(source) {
   return text + table;
 }
 async function __chaincloudWriteConfigTomlV10() {
-  let codexHome = process.env.CODEX_HOME && process.env.CODEX_HOME.trim() ? process.env.CODEX_HOME : i.default.join(r.default.homedir(), ".codex");
-  let configPath = i.default.join(codexHome, "config.toml");
-  await u.default.mkdir(codexHome, { recursive: true });
+  let codexHome = process.env.CODEX_HOME && process.env.CODEX_HOME.trim() ? process.env.CODEX_HOME : __chaincloudPathV11.join(__chaincloudOsV11.homedir(), ".codex");
+  let configPath = __chaincloudPathV11.join(codexHome, "config.toml");
+  await __chaincloudFsPromisesV11.mkdir(codexHome, { recursive: true });
   let current = "";
-  try { current = await u.default.readFile(configPath, "utf8"); } catch (error) {
+  try { current = await __chaincloudFsPromisesV11.readFile(configPath, "utf8"); } catch (error) {
     if (!error || error.code !== "ENOENT") throw error;
   }
   let next = __chaincloudEnsureConfigTextV10(current);
-  if (next !== String(current || "").replace(/\\r\\n/g, "\\n")) await u.default.writeFile(configPath, next.replace(/\\n/g, "\\r\\n"), "utf8");
+  if (next !== String(current || "").replace(/\\r\\n/g, "\\n")) await __chaincloudFsPromisesV11.writeFile(configPath, next.replace(/\\n/g, "\\r\\n"), "utf8");
   return { ok: true, path: configPath };
 }
 async function __chaincloudClearLoginSessionV10() {
   try {
-    let session = n.session.fromPartition(__chaincloudLoginPartitionV10);
+    let session = __chaincloudElectronV11.session.fromPartition(__chaincloudLoginPartitionV10);
     await session.clearStorageData();
     await session.clearCache?.();
   } catch {}
@@ -149,8 +153,8 @@ function __installChaincloudAuthProxyV10() {
   __chaincloudRemoveHandlerV10(__chaincloudConfigIpcChannelV10);
   __chaincloudRemoveHandlerV10(__chaincloudLoginIpcChannelV10);
   __chaincloudRemoveHandlerV10(__chaincloudLogoutIpcChannelV10);
-  n.ipcMain.handle(__chaincloudConfigIpcChannelV10, async () => __chaincloudWriteConfigTomlV10());
-  n.ipcMain.handle(__chaincloudAuthIpcChannelV10, async (event, request) => {
+  __chaincloudElectronV11.ipcMain.handle(__chaincloudConfigIpcChannelV10, async () => __chaincloudWriteConfigTomlV10());
+  __chaincloudElectronV11.ipcMain.handle(__chaincloudAuthIpcChannelV10, async (event, request) => {
     if (request == null || typeof request !== "object") throw Error("Invalid ChainCloud request");
     let requestPath = String(request.path || "");
     if (!requestPath.startsWith("/") || requestPath.startsWith("//")) throw Error("Invalid ChainCloud path");
@@ -172,18 +176,18 @@ function __installChaincloudAuthProxyV10() {
     let timeout = setTimeout(() => controller.abort(), 30000);
     try {
       init.signal = controller.signal;
-      let response = await n.net.fetch(url.toString(), init);
+      let response = await __chaincloudElectronV11.net.fetch(url.toString(), init);
       let text = await response.text();
       return { ok: response.ok, status: response.status, statusText: response.statusText, text };
     } finally {
       clearTimeout(timeout);
     }
   });
-  n.ipcMain.handle(__chaincloudLogoutIpcChannelV10, async () => {
+  __chaincloudElectronV11.ipcMain.handle(__chaincloudLogoutIpcChannelV10, async () => {
     await __chaincloudClearLoginSessionV10();
     return true;
   });
-  n.ipcMain.handle(__chaincloudLoginIpcChannelV10, async (event) => {
+  __chaincloudElectronV11.ipcMain.handle(__chaincloudLoginIpcChannelV10, async (event) => {
     if (__chaincloudLoginViewV10 && !__chaincloudLoginViewV10.webContents?.isDestroyed?.()) {
       try { __chaincloudLoginViewV10.webContents.focus(); } catch {}
       return __chaincloudLoginPromiseV10;
@@ -192,12 +196,11 @@ function __installChaincloudAuthProxyV10() {
     let done = false;
     let cleanup = () => {};
     void (async () => {
-    await __chaincloudClearLoginSessionV10();
-    let parentWindow = n.BrowserWindow.fromWebContents(event.sender);
+    let parentWindow = __chaincloudElectronV11.BrowserWindow.fromWebContents(event.sender);
     if (!parentWindow) throw Error("ChainCloud login parent window unavailable");
     let previousTitle = "";
     try { previousTitle = parentWindow.getTitle?.() || ""; parentWindow.setTitle?.("Login - ChainCloud"); } catch {}
-    let loginView = new n.BrowserView({
+    let loginView = new __chaincloudElectronV11.BrowserView({
       webPreferences: {
         nodeIntegration: false,
         contextIsolation: true,
@@ -205,8 +208,10 @@ function __installChaincloudAuthProxyV10() {
         partition: __chaincloudLoginPartitionV10,
       },
     });
+    try { loginView.webContents.setBackgroundColor("#08111f"); } catch {}
     __chaincloudLoginViewV10 = loginView;
     let pollTimer = null;
+    let loadTimer = null;
     let resizeHandler = () => __chaincloudSetLoginViewBoundsV10(parentWindow, loginView);
     cleanup = () => {
       try {
@@ -214,6 +219,7 @@ function __installChaincloudAuthProxyV10() {
         parentWindow.off?.("closed", parentClosedHandler);
       } catch {}
       if (pollTimer) clearInterval(pollTimer);
+      if (loadTimer) clearTimeout(loadTimer);
       __chaincloudDestroyLoginViewV10(parentWindow, loginView);
       try { if (previousTitle) parentWindow.setTitle?.(previousTitle); } catch {}
       if (__chaincloudLoginPromiseV10) __chaincloudLoginPromiseV10 = null;
@@ -241,12 +247,40 @@ function __installChaincloudAuthProxyV10() {
     loginView.webContents.on("will-navigate", (navEvent, url) => {
       if (!__chaincloudIsAllowedLoginUrlV10(url)) navEvent.preventDefault();
     });
-    loginView.webContents.on("dom-ready", async () => { await __chaincloudFitLoginPageV10(parentWindow, loginView); await checkSession(); });
-    loginView.webContents.on("did-finish-load", async () => { await __chaincloudFitLoginPageV10(parentWindow, loginView); await checkSession(); });
+    loginView.webContents.on("dom-ready", async () => {
+      if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+      await __chaincloudFitLoginPageV10(parentWindow, loginView);
+      await checkSession();
+    });
+    loginView.webContents.on("did-finish-load", async () => {
+      if (loadTimer) { clearTimeout(loadTimer); loadTimer = null; }
+      await __chaincloudFitLoginPageV10(parentWindow, loginView);
+      await checkSession();
+    });
+    loginView.webContents.on("did-fail-load", (loadEvent, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame || done) return;
+      if (errorCode === -3) return;
+      done = true;
+      cleanup();
+      reject(Error(errorDescription || "ChainCloud login page failed to load"));
+    });
+    loginView.webContents.on("render-process-gone", (_goneEvent, details) => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(Error("ChainCloud login renderer exited: " + (details?.reason || "unknown")));
+    });
     loginView.webContents.on("did-navigate", async () => { await __chaincloudFitLoginPageV10(parentWindow, loginView); await checkSession(); });
     loginView.webContents.on("did-navigate-in-page", async () => { await __chaincloudFitLoginPageV10(parentWindow, loginView); await checkSession(); });
     pollTimer = setInterval(checkSession, 1000);
     pollTimer.unref?.();
+    loadTimer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      cleanup();
+      reject(Error("ChainCloud login page timed out"));
+    }, 45000);
+    loadTimer.unref?.();
     loginView.webContents.loadURL(${JSON.stringify(CHAINCLOUD_ORIGIN + "/login")}).catch((error) => {
       done = true;
       cleanup();

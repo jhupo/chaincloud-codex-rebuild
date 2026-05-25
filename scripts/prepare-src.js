@@ -19,6 +19,11 @@ const { execSync } = require("child_process");
 
 const SRC = path.join(__dirname, "..", "src");
 const PROJECT_ROOT = path.join(__dirname, "..");
+const ASAR_BIN_CANDIDATES = [
+  path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "asar.cmd" : "asar"),
+  path.join(PROJECT_ROOT, "node_modules", ".bin", "asar"),
+  path.join(PROJECT_ROOT, "node_modules", "@electron", "asar", "bin", "asar.mjs"),
+];
 
 const TARGET_TRIPLE_MAP = {
   "mac-arm64": "aarch64-apple-darwin",
@@ -48,6 +53,15 @@ function copyRecursive(src, dest, skipFiles, skipDirs) {
     else { fs.copyFileSync(s, d); count++; }
   }
   return count;
+}
+
+function runAsar(args) {
+  const asarBin = ASAR_BIN_CANDIDATES.find((candidate) => fs.existsSync(candidate));
+  if (!asarBin) throw new Error("Local @electron/asar CLI not found. Run npm ci first.");
+  const command = asarBin.endsWith(".mjs")
+    ? `"${process.execPath}" "${asarBin}"`
+    : `"${asarBin}"`;
+  execSync(`${command} ${args.map((arg) => `"${arg}"`).join(" ")}`, { stdio: "inherit" });
 }
 
 /**
@@ -163,7 +177,7 @@ function main() {
   // 1. Repack _asar/ -> app.asar
   const repackedAsar = path.join(sourceDir, "app.asar");
   console.log("   [repack] _asar/ -> app.asar");
-  execSync(`npx asar pack "${asarContentDir}" "${repackedAsar}"`);
+  runAsar(["pack", asarContentDir, repackedAsar]);
   const asarSize = (fs.statSync(repackedAsar).size / 1048576).toFixed(1);
   console.log(`   [ok] app.asar: ${asarSize} MB`);
 
