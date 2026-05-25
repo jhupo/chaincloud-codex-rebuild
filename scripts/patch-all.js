@@ -15,6 +15,7 @@ const PATCHES = [
   "patch-i18n.js",
   "patch-copyright.js",
   "patch-devtools.js",
+  "patch-debug-sidebar.js",
   "patch-fast-mode.js",
   "patch-context-status.js",
   "patch-permissions-mode.js",

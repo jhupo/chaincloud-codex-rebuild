@@ -299,8 +299,8 @@ function jsClientSource() {
   }
   function billingPopoverText(){
     const summary = getSession()?.billingSummary;
-    if (!summary) return "\u4eca\u65e5 -- \u00b7 \u4f59\u989d --";
-    return "\u4eca\u65e5 " + formatMoney(summary.todaySpent) + " \u00b7 \u4f59\u989d " + formatMoney(summary.remaining);
+    if (!summary) return "\u4eca -- \u00b7 \u4f59 --";
+    return "\u4eca " + formatMoney(summary.todaySpent) + " \u00b7 \u4f59 " + formatMoney(summary.remaining);
   }
   let billingRefreshPromise = null;
   let billingRefreshAt = 0;

@@ -10,11 +10,7 @@
  * inside functions that also reference "fast_mode", and replaces
  * the comparison with !1 (always false), removing the auth gate.
  *
- * Target: permissions-mode-helpers-*.js (or any chunk with the pattern), plus
- * use-is-fast-mode-enabled-*.js in newer Codex builds where the selector is
- * gated by model service tier metadata. Newer builds also derive the dropdown
- * entries from model metadata, so ChainCloud needs a local Fast option injected
- * even when the upstream model list does not advertise extra service tiers.
+ * Target: permissions-mode-helpers-*.js (or any chunk with the pattern)
  */
 const fs = require("fs");
 const path = require("path");
@@ -77,65 +73,6 @@ function collectPatches(ast, source) {
   return patches;
 }
 
-function patchModelTierGate(source) {
-  const replacements = [
-    {
-      from: "function m(e){return e.serviceTiers.length>0||e.additionalSpeedTiers?.includes(u)===!0}",
-      to: "function m(e){return !0}",
-    },
-    {
-      from: "function m(e){return e.serviceTiers?.length>0||e.additionalSpeedTiers?.includes(u)===!0}",
-      to: "function m(e){return !0}",
-    },
-  ];
-
-  let changed = false;
-  for (const { from, to } of replacements) {
-    if (source.includes(from)) {
-      source = source.replace(from, to);
-      changed = true;
-    }
-  }
-  return { source, changed };
-}
-
-function patchServiceTierSettings(source) {
-  let changed = false;
-  const helper =
-    "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[],n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`fast`)||(t=[...t,{value:`fast`,label:`Fast`,description:`Fast responses`,iconKind:`fast`}]);return t}";
-
-  if (!source.includes("function ChainCloudServiceTierOptions(")) {
-    const insertAt = source.indexOf("function _(");
-    if (insertAt >= 0) {
-      source = source.slice(0, insertAt) + helper + source.slice(insertAt);
-      changed = true;
-    }
-  }
-
-  if (source.includes("F=i(k)")) {
-    source = source.replaceAll("F=i(k)", "F=ChainCloudServiceTierOptions(i(k))");
-    changed = true;
-  }
-
-  if (source.includes("let j=A,M=")) {
-    source = source.replace("let j=A,M=", "let j=A??(T.serviceTier===`fast`?`fast`:A),M=");
-    changed = true;
-  }
-
-  return { source, changed };
-}
-
-function patchComposerFastIndicator(source) {
-  let changed = false;
-  const from = "L=I!=null&&Se(e,F)";
-  const to = "L=I!=null&&(F===`fast`||Se(e,F))";
-  if (source.includes(from)) {
-    source = source.replace(from, to);
-    changed = true;
-  }
-  return { source, changed };
-}
-
 function main() {
   const args = process.argv.slice(2);
   const isCheck = args.includes("--check");
@@ -169,9 +106,6 @@ function main() {
   }
 
   let totalPatched = 0;
-  let totalTierGatesPatched = 0;
-  let totalTierSettingsPatched = 0;
-  let totalComposerIndicatorsPatched = 0;
 
   for (const bundle of targets) {
     const source = fs.readFileSync(bundle.path, "utf-8");
@@ -211,61 +145,8 @@ function main() {
     totalPatched += patches.length;
   }
 
-  for (const plat of platforms) {
-    const assetsDir = path.join(SRC_DIR, plat, "_asar", "webview", "assets");
-    if (!fs.existsSync(assetsDir)) continue;
-    for (const f of fs.readdirSync(assetsDir)) {
-      if (!/^use-is-fast-mode-enabled-.*\.js$/.test(f)) continue;
-      const fp = path.join(assetsDir, f);
-      const source = fs.readFileSync(fp, "utf-8");
-      const result = patchModelTierGate(source);
-      if (!result.changed) continue;
-      console.log(`  [${plat}] ${relPath(fp)}`);
-      console.log("    * force fast mode model tier gate open");
-      if (!isCheck) fs.writeFileSync(fp, result.source, "utf-8");
-      totalTierGatesPatched += 1;
-    }
-  }
-
-  for (const plat of platforms) {
-    const assetsDir = path.join(SRC_DIR, plat, "_asar", "webview", "assets");
-    if (!fs.existsSync(assetsDir)) continue;
-    for (const f of fs.readdirSync(assetsDir)) {
-      if (!/^use-service-tier-settings-.*\.js$/.test(f)) continue;
-      const fp = path.join(assetsDir, f);
-      const source = fs.readFileSync(fp, "utf-8");
-      const result = patchServiceTierSettings(source);
-      if (!result.changed) continue;
-      console.log(`  [${plat}] ${relPath(fp)}`);
-      console.log("    * inject ChainCloud standard/fast service tier options");
-      if (!isCheck) fs.writeFileSync(fp, result.source, "utf-8");
-      totalTierSettingsPatched += 1;
-    }
-  }
-
-  for (const plat of platforms) {
-    const assetsDir = path.join(SRC_DIR, plat, "_asar", "webview", "assets");
-    if (!fs.existsSync(assetsDir)) continue;
-    for (const f of fs.readdirSync(assetsDir)) {
-      if (!/^composer-(?!atoms-).*\.js$/.test(f)) continue;
-      const fp = path.join(assetsDir, f);
-      const source = fs.readFileSync(fp, "utf-8");
-      const result = patchComposerFastIndicator(source);
-      if (!result.changed) continue;
-      console.log(`  [${plat}] ${relPath(fp)}`);
-      console.log("    * show fast service tier indicator in composer");
-      if (!isCheck) fs.writeFileSync(fp, result.source, "utf-8");
-      totalComposerIndicatorsPatched += 1;
-    }
-  }
-
-  if (totalPatched > 0 || totalTierGatesPatched > 0 || totalTierSettingsPatched > 0 || totalComposerIndicatorsPatched > 0) {
-    const bits = [];
-    if (totalPatched > 0) bits.push(`${totalPatched} auth gate(s) removed`);
-    if (totalTierGatesPatched > 0) bits.push(`${totalTierGatesPatched} model tier gate(s) opened`);
-    if (totalTierSettingsPatched > 0) bits.push(`${totalTierSettingsPatched} service tier list(s) opened`);
-    if (totalComposerIndicatorsPatched > 0) bits.push(`${totalComposerIndicatorsPatched} composer fast indicator(s) patched`);
-    console.log(`  [ok] ${bits.join(", ")}`);
+  if (totalPatched > 0) {
+    console.log(`  [ok] ${totalPatched} auth gate(s) removed`);
   } else {
     console.log("  [ok] fast_mode auth gates already patched or absent");
   }

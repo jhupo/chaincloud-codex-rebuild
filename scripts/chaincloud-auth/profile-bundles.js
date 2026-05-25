@@ -81,7 +81,7 @@ function patchProfileBundleFile(file, isCheck) {
   if (loginRow.test(source) && !source.includes("chaincloud-recharge-profile")) {
     source = source.replace(
       loginRow,
-        "Be=(0,Q.jsxs)(Q.Fragment,{children:[window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},LeftIcon:Xe,children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,(0,Q.jsx)(jo,{onClick:()=>{o(!1),s(`/settings/general-settings`)},LeftIcon:Xu,children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`),(window.__chaincloudCodexAuth?.isLoggedIn?.()?f:!0)&&(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.isLoggedIn?.()?Ha(r,rd,{onConfirm:we}):window.__chaincloudCodexAuth?.showLoginModal?.({onSuccess:async({key:e})=>{await window.__chaincloudCodexSwitchApiKey?.(e.key)}})},LeftIcon:Qs,children:window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(X,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`}):`\u767b\u5f55`},`chaincloud-login-profile`)]})",
+        "Be=(0,Q.jsxs)(Q.Fragment,{children:[window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{LeftIcon:Yu,disabled:!0,children:window.__chaincloudCodexAuth?.displayName?.()||``},`chaincloud-auth`):null,window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},LeftIcon:Xe,children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(jo,{onClick:()=>{o(!1),s(`/settings/general-settings`)},LeftIcon:Xu,children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`):null,(window.__chaincloudCodexAuth?.isLoggedIn?.()?f:!0)&&(0,Q.jsx)(jo,{onClick:()=>{o(!1),window.__chaincloudCodexAuth?.isLoggedIn?.()?Ha(r,rd,{onConfirm:we}):window.__chaincloudCodexAuth?.showLoginModal?.({onSuccess:async({key:e})=>{await window.__chaincloudCodexSwitchApiKey?.(e.key)}})},LeftIcon:Qs,children:window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Q.jsx)(X,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`}):`\u767b\u5f55`},`chaincloud-login-profile`)]})",
     );
     changed = true;
   }
@@ -198,6 +198,12 @@ function patchProfileBundleFile(file, isCheck) {
     changed = true;
   }
 
+  const withChainCloudProfileRows = ensureChainCloudProfileRows(source);
+  if (withChainCloudProfileRows !== source) {
+    source = withChainCloudProfileRows;
+    changed = true;
+  }
+
   changed = changed && source !== original;
   if (!isCheck && changed) write(file, source);
   return changed;
@@ -216,6 +222,34 @@ function removeInjectedSettingsRow(source) {
     .replaceAll("||t[167]!==ChainCloudSettingsProfile", "")
     .replaceAll(",ChainCloudSettingsProfile", "")
     .replaceAll(",t[167]=ChainCloudSettingsProfile", "");
+}
+
+function ensureChainCloudProfileRows(source) {
+  if (!source.includes("profile-dropdown") || !source.includes("chaincloud-recharge-profile")) return source;
+  const profileRows =
+    "let ChainCloudProfileUser=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsxs)(Z.Fragment,{children:[(0,Z.jsx)(`div`,{className:`mx-1 mb-1 rounded-md bg-token-main-surface-secondary px-3 py-2 text-sm text-token-text-secondary`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2`,children:[(0,Z.jsx)(Qe,{className:`icon-sm shrink-0`}),(0,Z.jsx)(`span`,{className:`min-w-0 truncate`,children:window.__chaincloudCodexAuth?.displayName?.()||``})]})},`chaincloud-auth-user`),(0,Z.jsx)(Ne.Separator,{})]},`chaincloud-auth`):null,Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Xe,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,ChainCloudSettingsProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),u(`/settings/general-settings`,{state:q})},children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`):null,ChainCloudLogoutProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{onClick:async()=>{c(!1),await window.__chaincloudCodexAuth?.logout?.()},LeftIcon:Ze,children:(0,Z.jsx)(C,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`})},`chaincloud-logout-profile`):null;let ChainCloudProfileMenu=window.__chaincloudCodexAuth?.isLoggedIn?.()?[ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile]:[Q,$,Et,kt,At,Nt,Pt,Ft];";
+  const helperStart = source.indexOf("let ChainCloudProfileUser=");
+  if (helperStart >= 0) {
+    const helperEnd = source.indexOf("let It;", helperStart);
+    if (helperEnd >= 0) source = source.slice(0, helperStart) + profileRows + source.slice(helperEnd);
+  } else {
+    source = source.replace(
+      "let Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Xe,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null;",
+      profileRows,
+    );
+  }
+  source = source
+    .replaceAll("Ft=g&&(0,Z.jsx)(K,{onClick:()=>{c(!1),be(i,Jt,{onConfirm:xt})}", "Ft=!window.__chaincloudCodexAuth?.isLoggedIn?.()&&g&&(0,Z.jsx)(K,{onClick:()=>{c(!1),be(i,Jt,{onConfirm:xt})}")
+    .replaceAll("children:[Q,$,Et,kt,At,Nt,Pt,Rt,Ft]", "children:[Q,$,Et,kt,At,Nt,Pt,ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile,Ft]")
+    .replaceAll("children:[Q,$,Et,kt,At,Nt,Pt,ChainCloudProfileUser,Rt,ChainCloudLogoutProfile,Ft]", "children:[Q,$,Et,kt,At,Nt,Pt,ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile,Ft]")
+    .replaceAll("children:[Q,$,Et,kt,At,Nt,Pt,ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile,Ft]", "children:ChainCloudProfileMenu")
+    .replaceAll("||t[166]!==Rt?", "||t[166]!==Rt||t[167]!==ChainCloudProfileUser||t[168]!==ChainCloudLogoutProfile||t[169]!==ChainCloudSettingsProfile?")
+    .replaceAll("||t[166]!==Rt||t[167]!==ChainCloudProfileUser||t[168]!==ChainCloudLogoutProfile?", "||t[166]!==Rt||t[167]!==ChainCloudProfileUser||t[168]!==ChainCloudLogoutProfile||t[169]!==ChainCloudSettingsProfile?")
+    .replaceAll("||t[166]!==Rt||t[167]!==ChainCloudProfileUser||t[168]!==ChainCloudLogoutProfile||t[169]!==ChainCloudSettingsProfile?", "||t[166]!==Rt||t[167]!==ChainCloudProfileUser||t[168]!==ChainCloudLogoutProfile||t[169]!==ChainCloudSettingsProfile||t[170]!==ChainCloudProfileMenu?")
+    .replaceAll(",t[166]=Rt,t[160]=It", ",t[166]=Rt,t[167]=ChainCloudProfileUser,t[168]=ChainCloudLogoutProfile,t[169]=ChainCloudSettingsProfile,t[160]=It")
+    .replaceAll(",t[166]=Rt,t[167]=ChainCloudProfileUser,t[168]=ChainCloudLogoutProfile,t[160]=It", ",t[166]=Rt,t[167]=ChainCloudProfileUser,t[168]=ChainCloudLogoutProfile,t[169]=ChainCloudSettingsProfile,t[160]=It")
+    .replaceAll(",t[166]=Rt,t[167]=ChainCloudProfileUser,t[168]=ChainCloudLogoutProfile,t[169]=ChainCloudSettingsProfile,t[160]=It", ",t[166]=Rt,t[167]=ChainCloudProfileUser,t[168]=ChainCloudLogoutProfile,t[169]=ChainCloudSettingsProfile,t[170]=ChainCloudProfileMenu,t[160]=It");
+  return source;
 }
 
 function patchProfileBundles(platform, isCheck) {

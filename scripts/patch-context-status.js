@@ -19,13 +19,27 @@ function replaceBetween(source, startNeedle, endNeedle, replacement) {
 
 function ensureComposerFooterContextStatus(source) {
   source = source.replaceAll("`aria-label`:s", '"aria-label":s');
-  if (source.includes("function ChainCloudComposerContextStatus(")) return source;
 
   const marker = "function Um(e){";
   if (!source.includes(marker)) return source;
 
+  const helperMarkers = [
+    "function ChainCloudCompactTokens(",
+    "function ChainCloudComposerContextBilling(){",
+    "function ChainCloudComposerContextTooltip(",
+    "function ChainCloudComposerContextStatus(",
+  ];
+  const helperStarts = helperMarkers
+    .map((needle) => source.indexOf(needle))
+    .filter((index) => index >= 0);
+  if (helperStarts.length > 0) {
+    const helperStart = Math.min(...helperStarts);
+    const helperEnd = source.indexOf(marker, helperStart + 1);
+    if (helperEnd > helperStart) source = source.slice(0, helperStart) + source.slice(helperEnd);
+  }
+
   const helper =
-    "function ChainCloudComposerContextBilling(){let[e,t]=(0,Z.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\\u4eca\\u65e5 -- \\u00b7 \\u4f59\\u989d --`);return(0,Z.useEffect)(()=>{let e=!0,n=()=>{e&&t(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\\u4eca\\u65e5 -- \\u00b7 \\u4f59\\u989d --`)};n(),window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(n).catch(n);let r=()=>n();return window.addEventListener(`chaincloud-billing-updated`,r),window.addEventListener(`chaincloud-auth-changed`,r),()=>{e=!1,window.removeEventListener(`chaincloud-billing-updated`,r),window.removeEventListener(`chaincloud-auth-changed`,r)}},[]),(0,Q.jsx)(`div`,{className:`mt-1 border-t border-token-border/60 pt-1 text-center text-token-foreground`,children:e})}function ChainCloudComposerContextStatus(e){let t=(0,$.c)(20),{conversationId:n}=e,r=kt(),i=Et(E,n),a,o,s;if(t[0]!==i||t[1]!==r){let{percent:e,usedTokens:n,contextWindow:c}=jc(i);a=e??0,o=e==null?`\\u4e0a\\u4e0b\\u6587\\u7528\\u91cf\\u6682\\u4e0d\\u53ef\\u7528`:r.formatMessage({id:`codex.localConversation.status.contextUsageTooltip`,defaultMessage:`{usedTokens, number} / {contextWindow, number} tokens used`,description:`Tooltip showing used context tokens and total context window size in the composer footer`,values:{contextWindow:c,usedTokens:n}}),s=e==null?r.formatMessage({id:`codex.localConversation.status.contextUnavailableAriaLabel`,defaultMessage:`Context usage unavailable`,description:`Accessible label for the context usage donut when token usage is not available`}):r.formatMessage({id:`codex.localConversation.status.contextAriaLabel`,defaultMessage:`Context usage: {percent}%`,description:`Accessible label for the context usage donut in the composer footer`},{percent:r.formatNumber(e,{maximumFractionDigits:0})}),t[0]=i,t[1]=r,t[2]=a,t[3]=o,t[4]=s}else a=t[2],o=t[3],s=t[4];let c;t[5]===a?c=t[6]:(c=(0,Q.jsx)(Lh,{percent:a,className:`icon-2xs text-token-foreground`}),t[5]=a,t[6]=c);let l;t[7]!==s||t[8]!==c?(l=(0,Q.jsx)(`span`,{className:`inline-flex size-5 items-center justify-center`,role:`img`,\"aria-label\":s,children:c}),t[7]=s,t[8]=c,t[9]=l):l=t[9];let u;t[10]!==o||t[11]!==l?(u=(0,Q.jsx)(Dn,{tooltipContent:(0,Q.jsxs)(Q.Fragment,{children:[o,(0,Q.jsx)(ChainCloudComposerContextBilling,{})]}),side:`top`,align:`center`,sideOffset:4,children:l}),t[10]=o,t[11]=l,t[12]=u):u=t[12];return u}";
+    "function ChainCloudCompactTokens(e){let t=Number(e);return Number.isFinite(t)?t>=1e6?`${Math.round(t/1e5)/10}m`:t>=1e3?`${Math.round(t/1e3)}k`:`${Math.round(t)}`:`--`}function ChainCloudComposerContextBilling(){let[e,t]=(0,Z.useState)(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\\u4eca -- \\u00b7 \\u4f59 --`);return(0,Z.useEffect)(()=>{let e=!0,n=()=>{e&&t(window.__chaincloudCodexAuth?.billingPopoverText?.()||`\\u4eca -- \\u00b7 \\u4f59 --`)};n(),window.__chaincloudCodexAuth?.refreshBillingSummary?.(!0).then(n).catch(n);let r=()=>n();return window.addEventListener(`chaincloud-billing-updated`,r),window.addEventListener(`chaincloud-auth-changed`,r),()=>{e=!1,window.removeEventListener(`chaincloud-billing-updated`,r),window.removeEventListener(`chaincloud-auth-changed`,r)}},[]),(0,Q.jsx)(`div`,{className:`mt-1 border-t border-token-border/60 pt-1 text-center text-token-foreground`,children:e})}function ChainCloudComposerContextTooltip(e){let{percent:t,usedTokens:n,contextWindow:r}=e,i=t==null?null:Math.max(0,Math.min(t,100)),a=i==null?`\\u4e0a\\u4e0b\\u6587\\u7528\\u91cf\\u6682\\u4e0d\\u53ef\\u7528`:`${Math.round(i)}% \\u5df2\\u7528\\uff08\\u5269\\u4f59 ${Math.max(0,100-Math.round(i))}%\\uff09`,o=n!=null&&r!=null?`\\u5df2\\u7528 ${ChainCloudCompactTokens(n)} \\u6807\\u8bb0\\uff0c\\u5171 ${ChainCloudCompactTokens(r)}`:null;return(0,Q.jsxs)(`div`,{className:`flex flex-col items-center gap-0.5 text-center`,children:[(0,Q.jsx)(`div`,{className:`font-medium text-token-foreground`,children:`\\u80cc\\u666f\\u4fe1\\u606f\\u7a97\\u53e3:`}),(0,Q.jsx)(`div`,{children:a}),o?(0,Q.jsx)(`div`,{children:o}):null]})}function ChainCloudComposerContextStatus(e){let t=(0,$.c)(21),{conversationId:n}=e,r=kt(),i=Et(E,n),a,o,s,c;if(t[0]!==i||t[1]!==r){let{percent:e,usedTokens:n,contextWindow:l}=jc(i);a=e??0,o=e==null?r.formatMessage({id:`codex.localConversation.status.contextUnavailableAriaLabel`,defaultMessage:`Context usage unavailable`,description:`Accessible label for the context usage donut when token usage is not available`}):r.formatMessage({id:`codex.localConversation.status.contextAriaLabel`,defaultMessage:`Context usage: {percent}%`,description:`Accessible label for the context usage donut in the composer footer`},{percent:r.formatNumber(e,{maximumFractionDigits:0})}),s=(0,Q.jsx)(ChainCloudComposerContextTooltip,{percent:e,usedTokens:n,contextWindow:l}),c=e,t[0]=i,t[1]=r,t[2]=a,t[3]=o,t[4]=s,t[5]=c}else a=t[2],o=t[3],s=t[4],c=t[5];let l;t[6]===a?l=t[7]:(l=(0,Q.jsx)(Lh,{percent:a,className:`icon-2xs text-token-foreground`}),t[6]=a,t[7]=l);let u;t[8]!==o||t[9]!==l?(u=(0,Q.jsx)(`span`,{className:`inline-flex size-5 items-center justify-center`,role:`img`,\"aria-label\":o,children:l}),t[8]=o,t[9]=l,t[10]=u):u=t[10];let d;t[11]!==s||t[12]!==u?(d=(0,Q.jsx)(Dn,{tooltipContent:(0,Q.jsxs)(Q.Fragment,{children:[s,(0,Q.jsx)(ChainCloudComposerContextBilling,{})]}),side:`top`,align:`center`,sideOffset:4,children:u}),t[11]=s,t[12]=u,t[13]=d):d=t[13];return d}";
 
   return source.replace(marker, helper + marker);
 }
@@ -55,8 +69,12 @@ function patchContextStatusBundles(platform, isCheck) {
     source = ensureComposerFooterContextStatus(source);
 
     const footerNeedle = "children:[P,F,r,I]";
-    if (source.includes(footerNeedle)) {
-      source = source.replace(footerNeedle, "children:[(0,Q.jsx)(ChainCloudComposerContextStatus,{conversationId:i}),P,F,r,I]");
+    const contextBeforeProviderNeedle = "children:[(0,Q.jsx)(ChainCloudComposerContextStatus,{conversationId:i}),P,F,r,I]";
+    const footerWithContextStatus = "children:[P,(0,Q.jsx)(ChainCloudComposerContextStatus,{conversationId:i}),F,r,I]";
+    if (source.includes(contextBeforeProviderNeedle)) {
+      source = source.replace(contextBeforeProviderNeedle, footerWithContextStatus);
+    } else if (source.includes(footerNeedle)) {
+      source = source.replace(footerNeedle, footerWithContextStatus);
     }
 
     if (
