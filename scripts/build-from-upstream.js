@@ -99,13 +99,6 @@ function ensureWinElectronShell(outApp) {
   const exePath = path.join(outApp, "Codex.exe");
   if (fs.existsSync(exePath)) return;
 
-  const officialShell = findOfficialWinShell();
-  if (officialShell) {
-    console.log(`   [electron] reusing official shell: ${officialShell}`);
-    copyWinShellTemplate(officialShell, outApp);
-    return;
-  }
-
   const packageJson = require(path.join(PROJECT_ROOT, "package.json"));
   const electronVersion =
     String(packageJson.devDependencies?.electron || packageJson.dependencies?.electron || "")
