@@ -75,13 +75,21 @@ function ensureProviderName(source) {
   return { source, changed };
 }
 
-function ensureIdeContextIndicator(source) {
-  if (source.includes("function Em(e,t){return !0}")) return { source, changed: false };
-  if (!source.includes("function Em(e,t){return e&&t}")) return { source, changed: false };
-  return {
-    source: source.replace("function Em(e,t){return e&&t}", "function Em(e,t){return !0}"),
-    changed: true,
-  };
+function ensureIdeContextHidden(source) {
+  if (source.includes("function Em(e,t){return !1}")) return { source, changed: false };
+  if (source.includes("function Em(e,t){return !0}")) {
+    return {
+      source: source.replace("function Em(e,t){return !0}", "function Em(e,t){return !1}"),
+      changed: true,
+    };
+  }
+  if (source.includes("function Em(e,t){return e&&t}")) {
+    return {
+      source: source.replace("function Em(e,t){return e&&t}", "function Em(e,t){return !1}"),
+      changed: true,
+    };
+  }
+  return { source, changed: false };
 }
 
 function patchComposerBundles(platform, isCheck) {
@@ -124,9 +132,9 @@ function patchComposerBundles(platform, isCheck) {
     source = footerBilling.source;
     changed = changed || footerBilling.changed;
 
-    const ideContextIndicator = ensureIdeContextIndicator(source);
-    source = ideContextIndicator.source;
-    changed = changed || ideContextIndicator.changed;
+    const ideContextHidden = ensureIdeContextHidden(source);
+    source = ideContextHidden.source;
+    changed = changed || ideContextHidden.changed;
     if (changed) {
       if (!isCheck) write(file, source);
       touched.push(file);

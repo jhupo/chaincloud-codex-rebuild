@@ -19,6 +19,8 @@ const PATCHES = [
   "patch-context-status.js",
   "patch-permissions-mode.js",
   "patch-plugin-auth.js",
+  "patch-plugin-marketplace.js",
+  "patch-offline-skills.js",
   "patch-chaincloud-auth.js",
   "patch-updater.js",
   "patch-archive-delete.js",
