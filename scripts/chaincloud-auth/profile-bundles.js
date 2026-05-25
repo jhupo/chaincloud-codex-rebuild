@@ -192,9 +192,30 @@ function patchProfileBundleFile(file, isCheck) {
     }
   }
 
+  const withoutInjectedSettings = removeInjectedSettingsRow(source);
+  if (withoutInjectedSettings !== source) {
+    source = withoutInjectedSettings;
+    changed = true;
+  }
+
   changed = changed && source !== original;
   if (!isCheck && changed) write(file, source);
   return changed;
+}
+
+function removeInjectedSettingsRow(source) {
+  return source
+    .replace(
+      /,\(0,Q\.jsx\)\(jo,\{onClick:\(\)=>\{o\(!1\),s\(`\/settings\/general-settings`\)\},LeftIcon:Xu,children:`[^`]*`\},`chaincloud-settings-profile`\)/g,
+      "",
+    )
+    .replace(
+      /,ChainCloudSettingsProfile=\(0,Z\.jsx\)\(K,\{LeftIcon:Ue,onClick:\(\)=>\{c\(!1\),u\(`\/settings\/general-settings`,\{state:q\}\)\},children:`[^`]*`\},`chaincloud-settings-profile`\)/g,
+      "",
+    )
+    .replaceAll("||t[167]!==ChainCloudSettingsProfile", "")
+    .replaceAll(",ChainCloudSettingsProfile", "")
+    .replaceAll(",t[167]=ChainCloudSettingsProfile", "");
 }
 
 function patchProfileBundles(platform, isCheck) {
