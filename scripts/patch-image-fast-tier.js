@@ -9,7 +9,7 @@
 const { locateBundles, read, relPath, write } = require("./patch-util");
 
 const HELPER =
-  "function ChainCloudServiceTierForAttachments(e,t){if(e!==`fast`&&e!==`priority`)return e;let n=Array.isArray(t)&&t.some(e=>{let t=String(e?.mimeType??e?.mime_type??e?.type??e?.mediaType??e?.name??e?.path??``).toLowerCase();return t.includes(`image/`)||/\\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(t)});return n?void 0:e}";
+  "function ChainCloudServiceTierForAttachments(e,t){if(e!==`fast`&&e!==`priority`)return e;let r=e===`fast`?`priority`:e,n=Array.isArray(t)&&t.some(e=>{let t=String(e?.mimeType??e?.mime_type??e?.type??e?.mediaType??e?.name??e?.path??``).toLowerCase();return t.includes(`image/`)||/\\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(t)});return n?void 0:r}";
 
 function patchBundle(file, isCheck) {
   let source = read(file);
@@ -37,6 +37,7 @@ function validate(file, source) {
   const required = [
     "function ChainCloudServiceTierForAttachments",
     "serviceTier:S",
+    "e===`fast`?`priority`:e",
     "mimeType",
     "image/",
   ];
