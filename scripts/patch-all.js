@@ -23,6 +23,7 @@ const PATCHES = [
   "patch-plugin-auth.js",
   "patch-plugin-marketplace.js",
   "patch-offline-skills.js",
+  "patch-chaincloud-updater.js",
   "patch-chaincloud-auth.js",
   "patch-updater.js",
   "patch-archive-delete.js",
