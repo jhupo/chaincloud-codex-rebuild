@@ -18,6 +18,7 @@ scripts/.versions.json
 # Logs
 *.log
 npm-debug.log*
+.playwright-mcp/
 
 # OS files
 .DS_Store

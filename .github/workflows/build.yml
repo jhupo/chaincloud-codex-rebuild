@@ -17,6 +17,9 @@ env:
   NODE_VERSION: "24"
   ELECTRON_MIRROR: "https://npmmirror.com/mirrors/electron/"
 
+permissions:
+  contents: read
+
 jobs:
   build-mac:
     if: github.event_name == 'push' || inputs.platform == 'all' || inputs.platform == 'mac'
