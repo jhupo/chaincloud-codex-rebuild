@@ -23,7 +23,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -67,7 +68,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -107,7 +109,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -156,7 +159,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          persist-credentials: false
+          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
