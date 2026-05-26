@@ -64,6 +64,7 @@ var __chaincloudUpdaterElectronV12 = require("electron");
 var __chaincloudUpdaterFsV12 = require("fs");
 var __chaincloudUpdaterPathV12 = require("path");
 var __chaincloudUpdaterStreamV12 = require("stream");
+var __chaincloudUpdaterChildProcessV12 = require("child_process");
 var __chaincloudUpdaterRepoV12 = ${JSON.stringify(`${REPO_OWNER}/${REPO_NAME}`)};
 var __chaincloudUpdaterCurrentTagV12 = ${JSON.stringify(releaseTag)};
 var __chaincloudUpdaterStateV12 = { lifecycleState: "idle", isUpdateReady: false, release: null, asset: null, error: null, autoStarted: false, checking: null };
@@ -198,6 +199,52 @@ async function __chaincloudDownloadAssetV12(asset, windowManager, sender) {
   __chaincloudUpdaterProgressV12(windowManager, sender, 100);
   return target;
 }
+function __chaincloudUpdaterPsLiteralV12(value) {
+  return "'" + String(value).replace(/'/g, "''") + "'";
+}
+async function __chaincloudPrepareWindowsSelfUpdateV12(zipPath) {
+  let appDir = __chaincloudUpdaterPathV12.dirname(process.execPath);
+  let exeName = __chaincloudUpdaterPathV12.basename(process.execPath);
+  let workDir = __chaincloudUpdaterPathV12.join(__chaincloudUpdaterElectronV12.app.getPath("temp"), "chaincloud-codex-update-" + Date.now());
+  await __chaincloudUpdaterFsV12.promises.mkdir(workDir, { recursive: true });
+  let extractDir = __chaincloudUpdaterPathV12.join(workDir, "extract");
+  let scriptPath = __chaincloudUpdaterPathV12.join(workDir, "apply-update.ps1");
+  let logPath = __chaincloudUpdaterPathV12.join(workDir, "apply-update.log");
+  let lines = [
+    "$ErrorActionPreference = 'Stop'",
+    "$zipPath = " + __chaincloudUpdaterPsLiteralV12(zipPath),
+    "$appDir = " + __chaincloudUpdaterPsLiteralV12(appDir),
+    "$exeName = " + __chaincloudUpdaterPsLiteralV12(exeName),
+    "$extractDir = " + __chaincloudUpdaterPsLiteralV12(extractDir),
+    "$logPath = " + __chaincloudUpdaterPsLiteralV12(logPath),
+    "$pidToWait = " + String(process.pid),
+    "function Write-Log($message) { Add-Content -LiteralPath $logPath -Value ((Get-Date).ToString('s') + ' ' + $message) }",
+    "Write-Log 'waiting for app to exit'",
+    "Start-Sleep -Milliseconds 800",
+    "try { Wait-Process -Id $pidToWait -Timeout 90 } catch {}",
+    "Write-Log 'extracting update archive'",
+    "if (Test-Path -LiteralPath $extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force }",
+    "New-Item -ItemType Directory -Force -Path $extractDir | Out-Null",
+    "Expand-Archive -LiteralPath $zipPath -DestinationPath $extractDir -Force",
+    "$exe = Get-ChildItem -LiteralPath $extractDir -Recurse -Filter $exeName | Select-Object -First 1",
+    "if (-not $exe) { throw ('Cannot find ' + $exeName + ' in update archive') }",
+    "$sourceDir = $exe.DirectoryName",
+    "Write-Log ('copying from ' + $sourceDir + ' to ' + $appDir)",
+    "robocopy $sourceDir $appDir /MIR /R:30 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null",
+    "$robocopyCode = $LASTEXITCODE",
+    "if ($robocopyCode -ge 8) { throw ('robocopy failed with exit code ' + $robocopyCode) }",
+    "$targetExe = Join-Path $appDir $exeName",
+    "Write-Log ('restarting ' + $targetExe)",
+    "Start-Process -FilePath $targetExe -WorkingDirectory $appDir",
+  ];
+  await __chaincloudUpdaterFsV12.promises.writeFile(scriptPath, lines.join("\\r\\n") + "\\r\\n", "utf8");
+  return scriptPath;
+}
+function __chaincloudRunWindowsSelfUpdateV12(scriptPath) {
+  let child = __chaincloudUpdaterChildProcessV12.spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath], { detached: true, stdio: "ignore", windowsHide: true });
+  child.unref?.();
+  __chaincloudUpdaterElectronV12.app.quit();
+}
 async function __chaincloudInstallAppUpdateV12(windowManager, sender) {
   if (!__chaincloudUpdaterStateV12.asset) await __chaincloudCheckForAppUpdateV12(windowManager, sender, { silent: false });
   let asset = __chaincloudUpdaterStateV12.asset;
@@ -209,6 +256,14 @@ async function __chaincloudInstallAppUpdateV12(windowManager, sender) {
     let target = await __chaincloudDownloadAssetV12(asset, windowManager, sender);
     __chaincloudUpdaterStateV12.lifecycleState = "ready";
     __chaincloudUpdaterNotifyV12(windowManager, sender);
+    if (process.platform === "win32" && target.toLowerCase().endsWith(".zip")) {
+      let scriptPath = await __chaincloudPrepareWindowsSelfUpdateV12(target);
+      await __chaincloudUpdaterMessageBoxV12(sender, { type: "info", buttons: ["重启并更新", "打开文件", "取消"], defaultId: 0, cancelId: 2, title: "ChainCloud Codex 更新已就绪", message: "更新已下载，重启后会自动替换当前程序", detail: target }).then(result => {
+        if (result.response === 0) return __chaincloudRunWindowsSelfUpdateV12(scriptPath);
+        if (result.response === 1) return __chaincloudUpdaterElectronV12.shell.openPath(target);
+      });
+      return;
+    }
     await __chaincloudUpdaterMessageBoxV12(sender, { type: "info", buttons: ["打开文件", "打开发布页"], defaultId: 0, cancelId: 0, title: "ChainCloud Codex 更新已下载", message: "更新已下载", detail: target }).then(result => {
       if (result.response === 1) return __chaincloudUpdaterElectronV12.shell.openExternal(release?.html_url || asset.browser_download_url);
       return __chaincloudUpdaterElectronV12.shell.openPath(target);
