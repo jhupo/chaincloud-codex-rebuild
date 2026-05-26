@@ -247,8 +247,8 @@ function validateFastModeBundle(file, source) {
       "value:`priority`",
       "iconKind:`fast`",
       "ChainCloudServiceTierOptions(",
+      "=ChainCloudServiceTierOptions(",
       "availableOptions:",
-      "serviceTier===`priority`",
     ];
     for (const marker of required) {
       if (!source.includes(marker)) throw new Error(`${relPath(file)} missing service-tier marker: ${marker}`);

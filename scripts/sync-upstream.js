@@ -75,6 +75,10 @@ function extractArchive(archive, dest) {
   if (process.platform === "darwin" && archive.endsWith(".zip")) {
     // ditto preserves macOS symlinks + resource forks (required for .app)
     execSync(`ditto -xk "${archive}" "${dest}"`);
+  } else if (archive.endsWith(".msix")) {
+    // Windows runners can have an old 7-Zip that lists MSIX files but exits with
+    // "Headers Error". bsdtar handles these MSIX zip64 packages reliably.
+    execSync(`tar -xf "${archive}" -C "${dest}"`, { stdio: "pipe" });
   } else {
     // 7zz for Windows MSIX and Linux (symlinks don't matter — only ASAR content used)
     for (const bin of ["7zz", "7z"]) {
