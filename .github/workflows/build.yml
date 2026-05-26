@@ -138,6 +138,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          if ! command -v unzip >/dev/null || ! command -v zip >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y zip unzip || echo "::warning::Could not install zip tools; delta generation may be skipped"
+          fi
           mkdir -p previous-release artifacts-delta
           PREV_TAG="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 --json tagName,isDraft,isPrerelease --jq '.[] | select(.isDraft == false and .isPrerelease == false) | .tagName' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+-chaincloud\.[0-9]+$' | grep -v "^${GITHUB_REF_NAME}$" | head -n 1 || true)"
           if [ -n "$PREV_TAG" ]; then
@@ -148,7 +151,7 @@ jobs:
           fi
           CURRENT_WIN_ZIP="$(find artifacts -type f -name 'Codex-win-x64-*.zip' | head -n 1 || true)"
           PREVIOUS_WIN_ZIP="$(find previous-release -type f -name 'Codex-win-x64-*.zip' | head -n 1 || true)"
-          node scripts/create-windows-delta-update.js --current "$CURRENT_WIN_ZIP" --previous "$PREVIOUS_WIN_ZIP" --out-dir artifacts-delta --from-tag "$PREV_TAG" --to-tag "$GITHUB_REF_NAME"
+          node scripts/create-windows-delta-update.js --current "$CURRENT_WIN_ZIP" --previous "$PREVIOUS_WIN_ZIP" --out-dir artifacts-delta --from-tag "$PREV_TAG" --to-tag "$GITHUB_REF_NAME" || echo "::warning::Windows delta generation failed; publishing full release only"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
