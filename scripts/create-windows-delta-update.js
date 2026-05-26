@@ -58,6 +58,7 @@ function unzip(zipPath, dest) {
 }
 
 function zipDir(sourceDir, zipPath) {
+  zipPath = path.resolve(zipPath);
   fs.mkdirSync(path.dirname(zipPath), { recursive: true });
   try {
     run("zip", ["-qr", zipPath, "."], { cwd: sourceDir });
