@@ -24,7 +24,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -69,7 +68,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -110,7 +108,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -160,7 +157,6 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
-          token: ""
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
