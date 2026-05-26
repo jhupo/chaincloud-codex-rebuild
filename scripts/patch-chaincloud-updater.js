@@ -65,9 +65,10 @@ var __chaincloudUpdaterFsV12 = require("fs");
 var __chaincloudUpdaterPathV12 = require("path");
 var __chaincloudUpdaterStreamV12 = require("stream");
 var __chaincloudUpdaterChildProcessV12 = require("child_process");
+var __chaincloudUpdaterCryptoV12 = require("crypto");
 var __chaincloudUpdaterRepoV12 = ${JSON.stringify(`${REPO_OWNER}/${REPO_NAME}`)};
 var __chaincloudUpdaterCurrentTagV12 = ${JSON.stringify(releaseTag)};
-var __chaincloudUpdaterStateV12 = { lifecycleState: "idle", isUpdateReady: false, release: null, asset: null, error: null, autoStarted: false, checking: null };
+var __chaincloudUpdaterStateV12 = { lifecycleState: "idle", isUpdateReady: false, release: null, asset: null, deltaAsset: null, error: null, autoStarted: false, checking: null };
 function __chaincloudUpdaterReleaseRankV12(tag) {
   let match = String(tag || "").match(/^v?(\\d+)\\.(\\d+)\\.(\\d+)(?:-chaincloud\\.(\\d+))?$/);
   if (!match) return null;
@@ -126,6 +127,21 @@ function __chaincloudUpdaterPickAssetV12(release) {
   }).filter(Boolean).sort((a, b) => b.score - a.score);
   return scored[0]?.asset || null;
 }
+function __chaincloudUpdaterSafeTagV12(tag) {
+  return String(tag || "").replace(/[^a-zA-Z0-9._-]+/g, "-");
+}
+function __chaincloudUpdaterPickDeltaAssetV12(release) {
+  if (process.platform !== "win32") return null;
+  let assets = Array.isArray(release?.assets) ? release.assets : [];
+  let fromTag = __chaincloudUpdaterSafeTagV12(__chaincloudUpdaterCurrentTagV12).toLowerCase();
+  let toTag = __chaincloudUpdaterSafeTagV12(release?.tag_name).toLowerCase();
+  if (!fromTag || !toTag || fromTag === toTag) return null;
+  let needle = ("from-" + fromTag + "-to-" + toTag).toLowerCase();
+  return assets.find(asset => {
+    let name = String(asset?.name || "").toLowerCase();
+    return asset?.browser_download_url && name.endsWith(".patch.zip") && name.includes("chaincloud-win-x64") && name.includes(needle);
+  }) || null;
+}
 async function __chaincloudUpdaterFetchLatestV12() {
   let url = "https://api.github.com/repos/" + __chaincloudUpdaterRepoV12 + "/releases?per_page=20";
   let response = await __chaincloudUpdaterElectronV12.net.fetch(url, { headers: { accept: "application/vnd.github+json", "user-agent": "ChainCloud-Codex-Updater" } });
@@ -135,7 +151,8 @@ async function __chaincloudUpdaterFetchLatestV12() {
   if (!release) throw Error("No ChainCloud release found");
   let asset = __chaincloudUpdaterPickAssetV12(release);
   if (!asset) throw Error("No update asset for " + process.platform + "-" + process.arch);
-  return { release, asset };
+  let deltaAsset = __chaincloudUpdaterPickDeltaAssetV12(release);
+  return { release, asset, deltaAsset };
 }
 async function __chaincloudCheckForAppUpdateV12(windowManager, sender, options) {
   let silent = !!options?.silent;
@@ -149,6 +166,7 @@ async function __chaincloudCheckForAppUpdateV12(windowManager, sender, options) 
       let hasUpdate = __chaincloudUpdaterCompareTagsV12(latest.release.tag_name, __chaincloudUpdaterCurrentTagV12) > 0;
       __chaincloudUpdaterStateV12.release = hasUpdate ? latest.release : null;
       __chaincloudUpdaterStateV12.asset = hasUpdate ? latest.asset : null;
+      __chaincloudUpdaterStateV12.deltaAsset = hasUpdate ? latest.deltaAsset : null;
       __chaincloudUpdaterStateV12.isUpdateReady = hasUpdate;
       __chaincloudUpdaterStateV12.lifecycleState = hasUpdate ? "ready" : "idle";
       __chaincloudUpdaterNotifyV12(windowManager, sender);
@@ -202,6 +220,89 @@ async function __chaincloudDownloadAssetV12(asset, windowManager, sender) {
 function __chaincloudUpdaterPsLiteralV12(value) {
   return "'" + String(value).replace(/'/g, "''") + "'";
 }
+function __chaincloudUpdaterSafeRelativePathV12(value) {
+  let normalized = String(value || "").replace(/\\\\/g, "/");
+  if (!normalized || normalized.startsWith("/") || /^[a-zA-Z]:/.test(normalized) || normalized.split("/").includes("..")) throw Error("Unsafe delta path: " + value);
+  return normalized.split("/").join(__chaincloudUpdaterPathV12.sep);
+}
+async function __chaincloudUpdaterSha256FileV12(file) {
+  return await new Promise((resolve, reject) => {
+    let hash = __chaincloudUpdaterCryptoV12.createHash("sha256");
+    let input = __chaincloudUpdaterFsV12.createReadStream(file);
+    input.on("data", chunk => hash.update(chunk));
+    input.on("error", reject);
+    input.on("end", () => resolve(hash.digest("hex")));
+  });
+}
+async function __chaincloudExtractZipV12(zipPath, destDir) {
+  await __chaincloudUpdaterFsV12.promises.rm(destDir, { recursive: true, force: true });
+  await __chaincloudUpdaterFsV12.promises.mkdir(destDir, { recursive: true });
+  await new Promise((resolve, reject) => {
+    let child = __chaincloudUpdaterChildProcessV12.spawn("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "Expand-Archive -LiteralPath " + __chaincloudUpdaterPsLiteralV12(zipPath) + " -DestinationPath " + __chaincloudUpdaterPsLiteralV12(destDir) + " -Force"], { windowsHide: true });
+    let stderr = "";
+    child.stderr?.on("data", chunk => { stderr += String(chunk); });
+    child.on("error", reject);
+    child.on("exit", code => code === 0 ? resolve() : reject(Error("Expand-Archive failed: " + (stderr || code))));
+  });
+}
+async function __chaincloudPrepareWindowsDeltaSelfUpdateV12(patchPath, release) {
+  let appDir = __chaincloudUpdaterPathV12.dirname(process.execPath);
+  let exeName = __chaincloudUpdaterPathV12.basename(process.execPath);
+  let workDir = __chaincloudUpdaterPathV12.join(__chaincloudUpdaterElectronV12.app.getPath("temp"), "chaincloud-codex-delta-update-" + Date.now());
+  let extractDir = __chaincloudUpdaterPathV12.join(workDir, "delta");
+  let scriptPath = __chaincloudUpdaterPathV12.join(workDir, "apply-delta-update.ps1");
+  let logPath = __chaincloudUpdaterPathV12.join(workDir, "apply-delta-update.log");
+  await __chaincloudExtractZipV12(patchPath, extractDir);
+  let manifestPath = __chaincloudUpdaterPathV12.join(extractDir, "chaincloud-delta-manifest.json");
+  let manifest = JSON.parse(await __chaincloudUpdaterFsV12.promises.readFile(manifestPath, "utf8"));
+  if (manifest?.kind !== "chaincloud-windows-file-delta") throw Error("Invalid delta update manifest");
+  if (manifest.fromTag !== __chaincloudUpdaterCurrentTagV12 || manifest.toTag !== release?.tag_name) throw Error("Delta update tag mismatch");
+  let files = Array.isArray(manifest.files) ? manifest.files : [];
+  let deletes = Array.isArray(manifest.deletes) ? manifest.deletes : [];
+  for (let item of [...files, ...deletes]) item.__safePath = __chaincloudUpdaterSafeRelativePathV12(item.path);
+  for (let item of files) {
+    let payload = __chaincloudUpdaterPathV12.join(extractDir, "files", item.__safePath);
+    if (!__chaincloudUpdaterFsV12.existsSync(payload)) throw Error("Delta payload missing: " + item.path);
+    let payloadHash = await __chaincloudUpdaterSha256FileV12(payload);
+    if (payloadHash !== item.sha256) throw Error("Delta payload hash mismatch: " + item.path);
+    let target = __chaincloudUpdaterPathV12.join(appDir, item.__safePath);
+    if (item.fromSha256) {
+      if (!__chaincloudUpdaterFsV12.existsSync(target)) throw Error("Installed file missing for delta: " + item.path);
+      let currentHash = await __chaincloudUpdaterSha256FileV12(target);
+      if (currentHash !== item.fromSha256) throw Error("Installed file hash mismatch for delta: " + item.path);
+    } else if (__chaincloudUpdaterFsV12.existsSync(target)) {
+      throw Error("Delta new file already exists: " + item.path);
+    }
+  }
+  for (let item of deletes) {
+    let target = __chaincloudUpdaterPathV12.join(appDir, item.__safePath);
+    if (!__chaincloudUpdaterFsV12.existsSync(target)) continue;
+    let currentHash = await __chaincloudUpdaterSha256FileV12(target);
+    if (currentHash !== item.fromSha256) throw Error("Installed delete file hash mismatch for delta: " + item.path);
+  }
+  let lines = [
+    "$ErrorActionPreference = 'Stop'",
+    "$appDir = " + __chaincloudUpdaterPsLiteralV12(appDir),
+    "$exeName = " + __chaincloudUpdaterPsLiteralV12(exeName),
+    "$deltaDir = " + __chaincloudUpdaterPsLiteralV12(extractDir),
+    "$manifestPath = Join-Path $deltaDir 'chaincloud-delta-manifest.json'",
+    "$filesDir = Join-Path $deltaDir 'files'",
+    "$logPath = " + __chaincloudUpdaterPsLiteralV12(logPath),
+    "$pidToWait = " + String(process.pid),
+    "function Write-Log($message) { Add-Content -LiteralPath $logPath -Value ((Get-Date).ToString('s') + ' ' + $message) }",
+    "Write-Log 'waiting for app to exit'",
+    "Start-Sleep -Milliseconds 800",
+    "try { Wait-Process -Id $pidToWait -Timeout 90 } catch {}",
+    "$manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json",
+    "foreach ($item in @($manifest.deletes)) { $target = Join-Path $appDir $item.path; if (Test-Path -LiteralPath $target) { Write-Log ('deleting ' + $item.path); Remove-Item -LiteralPath $target -Force } }",
+    "foreach ($item in @($manifest.files)) { $src = Join-Path $filesDir $item.path; $dest = Join-Path $appDir $item.path; $parent = Split-Path -Parent $dest; if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }; Write-Log ('copying ' + $item.path); Copy-Item -LiteralPath $src -Destination $dest -Force; $hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant(); if ($hash -ne $item.sha256) { throw ('hash mismatch after copy: ' + $item.path) } }",
+    "$targetExe = Join-Path $appDir $exeName",
+    "Write-Log ('restarting ' + $targetExe)",
+    "Start-Process -FilePath $targetExe -WorkingDirectory $appDir",
+  ];
+  await __chaincloudUpdaterFsV12.promises.writeFile(scriptPath, lines.join("\\r\\n") + "\\r\\n", "utf8");
+  return scriptPath;
+}
 async function __chaincloudPrepareWindowsSelfUpdateV12(zipPath) {
   let appDir = __chaincloudUpdaterPathV12.dirname(process.execPath);
   let exeName = __chaincloudUpdaterPathV12.basename(process.execPath);
@@ -248,11 +349,28 @@ function __chaincloudRunWindowsSelfUpdateV12(scriptPath) {
 async function __chaincloudInstallAppUpdateV12(windowManager, sender) {
   if (!__chaincloudUpdaterStateV12.asset) await __chaincloudCheckForAppUpdateV12(windowManager, sender, { silent: false });
   let asset = __chaincloudUpdaterStateV12.asset;
+  let deltaAsset = __chaincloudUpdaterStateV12.deltaAsset;
   let release = __chaincloudUpdaterStateV12.release;
   if (!asset) return;
   __chaincloudUpdaterStateV12.lifecycleState = "installing";
   __chaincloudUpdaterNotifyV12(windowManager, sender);
   try {
+    if (process.platform === "win32" && deltaAsset) {
+      try {
+        let deltaTarget = await __chaincloudDownloadAssetV12(deltaAsset, windowManager, sender);
+        let deltaScriptPath = await __chaincloudPrepareWindowsDeltaSelfUpdateV12(deltaTarget, release);
+        __chaincloudUpdaterStateV12.lifecycleState = "ready";
+        __chaincloudUpdaterNotifyV12(windowManager, sender);
+        await __chaincloudUpdaterMessageBoxV12(sender, { type: "info", buttons: ["Restart and update", "Open file", "Cancel"], defaultId: 0, cancelId: 2, title: "ChainCloud Codex delta update ready", message: "Delta update has been downloaded and verified. Restart to apply it.", detail: deltaTarget }).then(result => {
+          if (result.response === 0) return __chaincloudRunWindowsSelfUpdateV12(deltaScriptPath);
+          if (result.response === 1) return __chaincloudUpdaterElectronV12.shell.openPath(deltaTarget);
+        });
+        return;
+      } catch (deltaError) {
+        console.warn("[ChainCloud updater] delta update unavailable, falling back to full package", deltaError);
+        __chaincloudUpdaterStateV12.deltaAsset = null;
+      }
+    }
     let target = await __chaincloudDownloadAssetV12(asset, windowManager, sender);
     __chaincloudUpdaterStateV12.lifecycleState = "ready";
     __chaincloudUpdaterNotifyV12(windowManager, sender);
