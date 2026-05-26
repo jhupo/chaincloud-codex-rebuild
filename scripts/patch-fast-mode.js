@@ -18,7 +18,7 @@ const { parse } = require("acorn");
 const { relPath, SRC_DIR } = require("./patch-util");
 
 const SERVICE_TIER_HELPER =
-  "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[],n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`fast`)||(t=[...t,{value:`fast`,label:`Fast`,description:`Fast responses`,iconKind:`fast`}]);return t}";
+  "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[],n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`fast`||e?.value===`priority`||e?.iconKind===`fast`)||(t=[...t,{value:`priority`,label:`Fast`,description:`1.5x speed, increased usage`,iconKind:`fast`}]);return t}";
 
 function walk(node, visitor) {
   if (!node || typeof node !== "object") return;
@@ -79,6 +79,19 @@ function collectPatches(ast, source) {
 function collectCurrentFastModePatches(source) {
   const patches = [];
 
+  const requirementExprRe =
+    /[A-Za-z_$][\w$]*\?\.requirements\?\.featureRequirements\?\.fast_mode===!1/g;
+  let requirementExprMatch;
+  while ((requirementExprMatch = requirementExprRe.exec(source))) {
+    patches.push({
+      id: "fast_mode_requirement_expr",
+      start: requirementExprMatch.index,
+      end: requirementExprMatch.index + requirementExprMatch[0].length,
+      replacement: "!1",
+      original: requirementExprMatch[0],
+    });
+  }
+
   const modelPredicate = source.match(/\.models\.some\(([A-Za-z_$][\w$]*)\)/);
   if (modelPredicate) {
     const fnName = modelPredicate[1];
@@ -131,7 +144,16 @@ function collectCurrentFastModePatches(source) {
 function collectServiceTierPatches(ast, source) {
   const patches = [];
 
-  if (!source.includes("ChainCloudServiceTierOptions(")) {
+  const helperMatch = /function ChainCloudServiceTierOptions\([^)]*\)\{.*?return [A-Za-z_$][\w$]*\}/.exec(source);
+  if (helperMatch && helperMatch[0] !== SERVICE_TIER_HELPER) {
+    patches.push({
+      id: "fast_mode_service_tier_helper_upgrade",
+      start: helperMatch.index,
+      end: helperMatch.index + helperMatch[0].length,
+      replacement: SERVICE_TIER_HELPER,
+      original: helperMatch[0],
+    });
+  } else if (!source.includes("ChainCloudServiceTierOptions(")) {
     const insertMatch = /var [A-Za-z_$][\w$]*=u\(\);function /.exec(source);
     if (insertMatch) {
       const insertAt = insertMatch.index + insertMatch[0].length - "function ".length;
@@ -175,6 +197,22 @@ function collectServiceTierPatches(ast, source) {
     });
   });
 
+  const effectiveRe =
+    /([A-Za-z_$][\w$]*\.serviceTier===`fast`\?`fast`:[A-Za-z_$][\w$]*)/g;
+  let effectiveMatch;
+  while ((effectiveMatch = effectiveRe.exec(source))) {
+    const original = effectiveMatch[1];
+    const serviceTierRef = original.match(/^([A-Za-z_$][\w$]*\.serviceTier)===/)[1];
+    const fallback = original.slice(original.lastIndexOf(":") + 1);
+    patches.push({
+      id: "fast_mode_effective_service_tier",
+      start: effectiveMatch.index,
+      end: effectiveMatch.index + original.length,
+      replacement: `${serviceTierRef}===\`fast\`||${serviceTierRef}===\`priority\`?\`priority\`:${fallback}`,
+      original,
+    });
+  }
+
   return patches;
 }
 
@@ -198,14 +236,19 @@ function validateFastModeBundle(file, source) {
     for (const marker of required) {
       if (!source.includes(marker)) throw new Error(`${relPath(file)} missing fast-mode marker: ${marker}`);
     }
+    if (source.includes("featureRequirements?.fast_mode===!1")) {
+      throw new Error(`${relPath(file)} still checks disabled fast_mode requirement`);
+    }
   }
 
   if (/^use-service-tier-settings-.*\.js$/.test(base)) {
     const required = [
       "function ChainCloudServiceTierOptions",
-      "value:`fast`",
+      "value:`priority`",
+      "iconKind:`fast`",
       "ChainCloudServiceTierOptions(",
       "availableOptions:",
+      "serviceTier===`priority`",
     ];
     for (const marker of required) {
       if (!source.includes(marker)) throw new Error(`${relPath(file)} missing service-tier marker: ${marker}`);
