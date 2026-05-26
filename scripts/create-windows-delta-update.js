@@ -195,11 +195,16 @@ function main() {
     JSON.stringify(manifest, null, 2) + "\n",
   );
 
-  const outName = `ChainCloud-win-x64-from-${safeTag(fromTag)}-to-${safeTag(toTag)}.patch.zip`;
+  const outName = "ChainCloud-win-x64-delta.patch.zip";
+  const legacyOutName = `ChainCloud-win-x64-from-${safeTag(fromTag)}-to-${safeTag(toTag)}.patch.zip`;
   const outPath = path.join(outDir, outName);
   zipDir(stagingDir, outPath);
+  if (legacyOutName !== outName) {
+    fs.copyFileSync(outPath, path.join(outDir, legacyOutName));
+  }
   const sizeMb = (fs.statSync(outPath).size / 1048576).toFixed(1);
   console.log(`[delta] ${outPath} (${sizeMb} MB, files=${files.length}, deletes=${deletes.length})`);
+  if (legacyOutName !== outName) console.log(`[delta] compatibility alias ${path.join(outDir, legacyOutName)}`);
 }
 
 main();

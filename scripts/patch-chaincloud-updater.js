@@ -137,10 +137,15 @@ function __chaincloudUpdaterPickDeltaAssetV12(release) {
   let toTag = __chaincloudUpdaterSafeTagV12(release?.tag_name).toLowerCase();
   if (!fromTag || !toTag || fromTag === toTag) return null;
   let needle = ("from-" + fromTag + "-to-" + toTag).toLowerCase();
-  return assets.find(asset => {
+  let patchAssets = assets.filter(asset => {
     let name = String(asset?.name || "").toLowerCase();
-    return asset?.browser_download_url && name.endsWith(".patch.zip") && name.includes("chaincloud-win-x64") && name.includes(needle);
-  }) || null;
+    return asset?.browser_download_url && name.endsWith(".patch.zip") && name.includes("chaincloud-win-x64");
+  });
+  let exact = patchAssets.find(asset => String(asset?.name || "").toLowerCase().includes(needle));
+  if (exact) return exact;
+  let short = patchAssets.find(asset => String(asset?.name || "").toLowerCase() === "chaincloud-win-x64-delta.patch.zip");
+  if (short) return short;
+  return patchAssets.length === 1 ? patchAssets[0] : null;
 }
 async function __chaincloudUpdaterFetchLatestV12() {
   let url = "https://api.github.com/repos/" + __chaincloudUpdaterRepoV12 + "/releases?per_page=20";
