@@ -20,6 +20,9 @@ const { relPath, SRC_DIR } = require("./patch-util");
 const SERVICE_TIER_HELPER =
   "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[],n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`fast`||e?.value===`priority`||e?.iconKind===`fast`)||(t=[...t,{value:`priority`,label:`Fast`,description:`1.5x speed, increased usage`,iconKind:`fast`}]);return t}";
 
+const EFFECTIVE_SERVICE_TIER_HELPER =
+  "function ChainCloudEffectiveServiceTier(e,t,n){return n??(t===`fast`||t===`priority`?`priority`:n)}";
+
 function walk(node, visitor) {
   if (!node || typeof node !== "object") return;
   if (node.type) visitor(node);
@@ -167,6 +170,29 @@ function collectServiceTierPatches(ast, source) {
     }
   }
 
+  const effectiveHelperMatch =
+    /function ChainCloudEffectiveServiceTier\([^)]*\)\{.*?return [^{}]*\}/.exec(source);
+  if (effectiveHelperMatch && effectiveHelperMatch[0] !== EFFECTIVE_SERVICE_TIER_HELPER) {
+    patches.push({
+      id: "fast_mode_effective_service_tier_helper_upgrade",
+      start: effectiveHelperMatch.index,
+      end: effectiveHelperMatch.index + effectiveHelperMatch[0].length,
+      replacement: EFFECTIVE_SERVICE_TIER_HELPER,
+      original: effectiveHelperMatch[0],
+    });
+  } else if (!source.includes("ChainCloudEffectiveServiceTier(")) {
+    const optionsHelperIndex = source.indexOf(SERVICE_TIER_HELPER);
+    if (optionsHelperIndex >= 0) {
+      patches.push({
+        id: "fast_mode_effective_service_tier_helper",
+        start: optionsHelperIndex + SERVICE_TIER_HELPER.length,
+        end: optionsHelperIndex + SERVICE_TIER_HELPER.length,
+        replacement: EFFECTIVE_SERVICE_TIER_HELPER,
+        original: "",
+      });
+    }
+  }
+
   const optionVars = new Set();
   walk(ast, (node) => {
     if (node.type !== "Property") return;
@@ -213,6 +239,24 @@ function collectServiceTierPatches(ast, source) {
     });
   }
 
+  const effectiveAssignmentRe =
+    /(,|\b)([A-Za-z_$][\w$]*)=([A-Za-z_$][\w$]*)\(([A-Za-z_$][\w$]*),([A-Za-z_$][\w$]*\.serviceTier)\)/g;
+  while ((effectiveMatch = effectiveAssignmentRe.exec(source))) {
+    const [original, prefix, target, fn, modelRef, serviceTierRef] = effectiveMatch;
+    const exportedDirectly = source.includes(`effectiveServiceTier:${target}`);
+    const aliasMatch = new RegExp(`\\blet ([A-Za-z_$][\\w$]*)=${target}\\b`).exec(source);
+    const exportedThroughAlias = aliasMatch != null && source.includes(`effectiveServiceTier:${aliasMatch[1]}`);
+    if (!exportedDirectly && !exportedThroughAlias) continue;
+    if (fn === "ChainCloudEffectiveServiceTier") continue;
+    patches.push({
+      id: "fast_mode_effective_service_tier_fallback",
+      start: effectiveMatch.index,
+      end: effectiveMatch.index + original.length,
+      replacement: `${prefix}${target}=ChainCloudEffectiveServiceTier(${modelRef},${serviceTierRef},${fn}(${modelRef},${serviceTierRef}))`,
+      original,
+    });
+  }
+
   return patches;
 }
 
@@ -244,8 +288,10 @@ function validateFastModeBundle(file, source) {
   if (/^use-service-tier-settings-.*\.js$/.test(base)) {
     const required = [
       "function ChainCloudServiceTierOptions",
+      "function ChainCloudEffectiveServiceTier",
       "value:`priority`",
       "iconKind:`fast`",
+      "ChainCloudEffectiveServiceTier(",
       "ChainCloudServiceTierOptions(",
       "=ChainCloudServiceTierOptions(",
       "availableOptions:",
