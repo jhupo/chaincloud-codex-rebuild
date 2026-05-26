@@ -4,7 +4,8 @@ function patchProfileBundleFile(file, isCheck) {
   let source = read(file);
   const original = source;
   let changed = false;
-  if (!source.includes("codex.profileDropdown.apiKeyAuth") && !source.includes("chaincloud-auth")) return false;
+  const isProfileBundle = isProfileDropdownBundle(file);
+  if (!isProfileBundle && !source.includes("codex.profileDropdown.apiKeyAuth") && !source.includes("chaincloud-auth")) return false;
 
   const originalApiKeyRow = /else if\(x\)\{let e;t\[87\]===Symbol\.for\(`react\.memo_cache_sentinel`\)\?\(e=\(0,Q\.jsx\)\(jo,\{LeftIcon:Yu,disabled:!0,children:\(0,Q\.jsx\)\(X,\{id:`codex\.profileDropdown\.apiKeyAuth`,defaultMessage:`Logged in with API key`,description:`Label indicating the user is authenticated with an API key`\}\)\},`api-key-auth`\),t\[87\]=e\):e=t\[87\],De\.push\(e\)\}/;
   if (originalApiKeyRow.test(source)) {
@@ -198,11 +199,13 @@ function patchProfileBundleFile(file, isCheck) {
     changed = true;
   }
 
-  const withChainCloudProfileRows = ensureChainCloudProfileRows(source);
+  const withChainCloudProfileRows = ensureChainCloudProfileRows(source, isProfileBundle);
   if (withChainCloudProfileRows !== source) {
     source = withChainCloudProfileRows;
     changed = true;
   }
+
+  validateChainCloudProfileRows(source, isProfileBundle);
 
   changed = changed && source !== original;
   if (!isCheck && changed) write(file, source);
@@ -224,10 +227,14 @@ function removeInjectedSettingsRow(source) {
     .replaceAll(",t[167]=ChainCloudSettingsProfile", "");
 }
 
-function ensureChainCloudProfileRows(source) {
-  if (!source.includes("profile-dropdown") || !source.includes("chaincloud-recharge-profile")) return source;
+function isProfileDropdownBundle(file) {
+  return /^profile-dropdown-.*\.js$/.test(path.basename(file));
+}
+
+function ensureChainCloudProfileRows(source, isProfileBundle = false) {
+  if ((!isProfileBundle && !source.includes("profile-dropdown")) || !source.includes("chaincloud-recharge-profile")) return source;
   const profileRows =
-    "let ChainCloudProfileUser=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsxs)(Z.Fragment,{children:[(0,Z.jsx)(`div`,{className:`mx-1 mb-1 rounded-md bg-token-main-surface-secondary px-3 py-2 text-sm text-token-text-secondary`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2`,children:[(0,Z.jsx)(Qe,{className:`icon-sm shrink-0`}),(0,Z.jsx)(`span`,{className:`min-w-0 truncate`,children:window.__chaincloudCodexAuth?.displayName?.()||``})]})},`chaincloud-auth-user`),(0,Z.jsx)(Ne.Separator,{})]},`chaincloud-auth`):null,Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Xe,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,ChainCloudSettingsProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),u(`/settings/general-settings`,{state:q})},children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`):null,ChainCloudLogoutProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{onClick:async()=>{c(!1),await window.__chaincloudCodexAuth?.logout?.()},LeftIcon:Ze,children:(0,Z.jsx)(C,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`})},`chaincloud-logout-profile`):null;let ChainCloudProfileMenu=window.__chaincloudCodexAuth?.isLoggedIn?.()?[ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile]:[Q,$,Et,kt,At,Nt,Pt,Ft];";
+    "let ChainCloudProfileUser=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsxs)(Z.Fragment,{children:[(0,Z.jsx)(`div`,{className:`mx-1 mb-1 rounded-md bg-token-main-surface-secondary px-3 py-2 text-sm text-token-text-secondary`,children:(0,Z.jsxs)(`div`,{className:`flex min-w-0 items-center gap-2`,children:[(0,Z.jsx)(Qe,{className:`icon-sm shrink-0`}),(0,Z.jsx)(`span`,{className:`min-w-0 truncate`,children:window.__chaincloudCodexAuth?.displayName?.()||``})]})},`chaincloud-auth-user`),(0,Z.jsx)(Ne.Separator,{})]},`chaincloud-auth`):null,Rt=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{LeftIcon:Xe,onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showRechargeDialog?.()},children:`\u5145\u503c`},`chaincloud-recharge-profile`):null,ChainCloudSettingsProfile=(0,Z.jsx)(K,{LeftIcon:Ue,onClick:()=>{c(!1),u(`/settings/general-settings`,{state:q})},children:`\u8bbe\u7f6e`},`chaincloud-settings-profile`),ChainCloudLogoutProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?(0,Z.jsx)(K,{onClick:async()=>{c(!1),await window.__chaincloudCodexAuth?.logout?.()},LeftIcon:Ze,children:(0,Z.jsx)(C,{id:`codex.profileDropdown.logOut`,defaultMessage:`Log out`,description:`Menu item to log out of ChatGPT`})},`chaincloud-logout-profile`):null,ChainCloudLoginProfile=window.__chaincloudCodexAuth?.isLoggedIn?.()?null:(0,Z.jsx)(K,{onClick:()=>{c(!1),window.__chaincloudCodexAuth?.showLoginModal?.({onSuccess:async({key:e})=>{await window.__chaincloudCodexSwitchApiKey?.(e.key)}})},LeftIcon:Ge,children:`\u767b\u5f55`},`chaincloud-login-profile`);let ChainCloudProfileMenu=window.__chaincloudCodexAuth?.isLoggedIn?.()?[ChainCloudProfileUser,Rt,ChainCloudSettingsProfile,ChainCloudLogoutProfile]:[ChainCloudLoginProfile,ChainCloudSettingsProfile];";
   const helperStart = source.indexOf("let ChainCloudProfileUser=");
   if (helperStart >= 0) {
     const helperEnd = source.indexOf("let It;", helperStart);
@@ -252,6 +259,22 @@ function ensureChainCloudProfileRows(source) {
   return source;
 }
 
+function validateChainCloudProfileRows(source, isProfileBundle = false) {
+  if (!isProfileBundle && !source.includes("profile-dropdown")) return;
+  const required = [
+    "ChainCloudProfileMenu",
+    "ChainCloudLoginProfile",
+    "`chaincloud-login-profile`",
+    "window.__chaincloudCodexSwitchApiKey?.(e.key)",
+    ":[ChainCloudLoginProfile,ChainCloudSettingsProfile]",
+  ];
+  for (const marker of required) {
+    if (!source.includes(marker)) {
+      throw new Error(`ChainCloud profile menu patch missing marker: ${marker}`);
+    }
+  }
+}
+
 function patchProfileBundles(platform, isCheck) {
   const root = appRootFor(platform);
   const assetsDir = path.join(root, "webview", "assets");
@@ -260,7 +283,7 @@ function patchProfileBundles(platform, isCheck) {
     if (!file.endsWith(".js")) continue;
     const full = path.join(assetsDir, file);
     const source = read(full);
-    if (!source.includes("codex.profileDropdown.apiKeyAuth") && !source.includes("chaincloud-auth")) continue;
+    if (!isProfileDropdownBundle(full) && !source.includes("codex.profileDropdown.apiKeyAuth") && !source.includes("chaincloud-auth")) continue;
     if (patchProfileBundleFile(full, isCheck)) touched.push(full);
   }
   return touched;
