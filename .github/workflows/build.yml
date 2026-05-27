@@ -102,6 +102,22 @@ jobs:
       - run: node scripts/sync-upstream.js --force --skip-win
       - run: node scripts/patch-all.js mac-${{ matrix.arch }}
       - run: npm run build:linux-${{ matrix.arch }}
+      - name: Ensure Linux artifact exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          if find out/make -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.zip' \) | grep -q .; then
+            exit 0
+          fi
+          PACKAGE_DIR="$(find out -maxdepth 1 -type d -name 'Codex-linux-*' | head -n 1 || true)"
+          if [ -z "$PACKAGE_DIR" ]; then
+            echo "::error::No Linux package directory found in out/"
+            find out -maxdepth 3 -type f -o -type d
+            exit 1
+          fi
+          mkdir -p "out/make/zip/linux/${{ matrix.arch }}"
+          ZIP_PATH="$GITHUB_WORKSPACE/out/make/zip/linux/${{ matrix.arch }}/Codex-linux-${{ matrix.arch }}-${{ github.ref_name }}.zip"
+          (cd "$PACKAGE_DIR" && 7z a -tzip "$ZIP_PATH" .)
       - uses: actions/upload-artifact@v7
         with:
           name: Codex-Linux-${{ matrix.arch }}
