@@ -62,6 +62,31 @@ function assertFile(filePath, label) {
   return size;
 }
 
+function findPackageDirs() {
+  if (!fs.existsSync(OUT_DIR)) return [];
+  return fs.readdirSync(OUT_DIR, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && /^Codex-linux-/.test(entry.name))
+    .map((entry) => path.join(OUT_DIR, entry.name));
+}
+
+function printOutTree() {
+  console.log("\n== out/ tree ==");
+  if (!fs.existsSync(OUT_DIR)) {
+    console.log("out/ does not exist");
+    return;
+  }
+  const pending = [{ dir: OUT_DIR, depth: 0 }];
+  while (pending.length) {
+    const { dir, depth } = pending.shift();
+    if (depth > 3) continue;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      console.log(path.relative(PROJECT_ROOT, full));
+      if (entry.isDirectory()) pending.push({ dir: full, depth: depth + 1 });
+    }
+  }
+}
+
 async function packageLinux(arch, platformName) {
   const forgeConfig = require(path.join(PROJECT_ROOT, "forge.config.js"));
   const { packager } = require("@electron/packager");
@@ -72,6 +97,7 @@ async function packageLinux(arch, platformName) {
   if (!electronVersion) throw new Error("Cannot determine Electron version");
 
   clearDir(OUT_DIR);
+  const afterCompletePaths = [];
 
   const options = {
     ...forgeConfig.packagerConfig,
@@ -99,11 +125,35 @@ async function packageLinux(arch, platformName) {
           .then(() => done(), done);
       },
     ],
+    afterComplete: [
+      (finalPath, electronVersionArg, targetPlatform, targetArch, done) => {
+        afterCompletePaths.push(finalPath);
+        console.log(`[packager] afterComplete ${targetPlatform}-${targetArch}: ${path.relative(PROJECT_ROOT, finalPath)}`);
+        done();
+      },
+    ],
   };
 
   console.log(`\n== Package Linux: ${platformName} ==`);
-  const outputPaths = await packager(options);
-  const packageDir = outputPaths.find((p) => fs.existsSync(p) && fs.statSync(p).isDirectory());
+  let outputPaths = [];
+  const originalExit = process.exit;
+  try {
+    process.exit = (code) => {
+      throw new Error(`Unexpected process.exit(${code}) while running @electron/packager`);
+    };
+    outputPaths = await packager(options);
+  } finally {
+    process.exit = originalExit;
+  }
+  console.log(`[packager] outputs: ${JSON.stringify(outputPaths)}`);
+  console.log(`[packager] afterComplete paths: ${JSON.stringify(afterCompletePaths)}`);
+  printOutTree();
+
+  const packageDir = [
+    ...outputPaths,
+    ...afterCompletePaths,
+    ...findPackageDirs(),
+  ].find((p) => typeof p === "string" && fs.existsSync(p) && fs.statSync(p).isDirectory());
 
   if (!packageDir) {
     throw new Error(`@electron/packager did not produce a package directory. outputs=${JSON.stringify(outputPaths)}`);
