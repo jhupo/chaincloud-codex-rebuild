@@ -25,6 +25,17 @@ function loadFunction(file, name) {
   return Function(`${extractFunction(source, name)}; return ${name};`)();
 }
 
+function loadCoreServiceTierFunctions(file) {
+  const source = fs.readFileSync(file, "utf8");
+  const labels = "var Df={standardLabel:`Standard`,standardDescription:`Default speed`,fastLabel:`Fast`,fastDescription:`1.5x speed, increased usage`,ultrafastLabel:`Ultrafast`,ultrafastDescription:`The fastest available responses for latency-sensitive work`};";
+  const helper = source.includes("function ChainCloudFastTierModel(")
+    ? extractFunction(source, "ChainCloudFastTierModel")
+    : "";
+  const names = ["Of", "Af", "jf", "Mf", "Nf", "Pf", "Ff", "Lf"];
+  const functions = names.map((name) => extractFunction(source, name)).join(";");
+  return Function(`${labels}${helper}${functions}; return { options: Nf, effective: Lf, isValid: Ff };`)();
+}
+
 function locateOne(assetsDir, pattern) {
   const match = fs.readdirSync(assetsDir).find((file) => pattern.test(file));
   if (!match) throw new Error(`Unable to locate ${pattern} in ${assetsDir}`);
@@ -42,10 +53,12 @@ function nativeEffective(model, selected) {
 function verifyPlatform(platform) {
   const assetsDir = path.join(SRC_DIR, platform, "_asar", "webview", "assets");
   const serviceFile = locateOne(assetsDir, /^use-service-tier-settings-.*\.js$/);
+  const coreFile = locateOne(assetsDir, /^app-server-manager-signals-.*\.js$/);
   const buildFile = locateOne(assetsDir, /^build-start-conversation-params-.*\.js$/);
 
   const serviceOptions = loadFunction(serviceFile, "ChainCloudServiceTierOptions");
   const effectiveTier = loadFunction(serviceFile, "ChainCloudEffectiveServiceTier");
+  const coreTier = loadCoreServiceTierFunctions(coreFile);
   const tierForAttachments = loadFunction(buildFile, "ChainCloudServiceTierForAttachments");
 
   const emptyModel = { serviceTiers: [] };
@@ -69,6 +82,18 @@ function verifyPlatform(platform) {
   const selected = options.find((option) => option.value === effective);
   assert.strictEqual(selected?.iconKind, "fast", "Composer selected option must resolve to the fast icon");
 
+  const coreOptions = coreTier.options(emptyModel);
+  const coreFastOption = coreOptions.find((option) => option.iconKind === "fast");
+  assert.deepStrictEqual(
+    coreFastOption && { value: coreFastOption.value, iconKind: coreFastOption.iconKind },
+    { value: "priority", iconKind: "fast" },
+    "native service-tier options must expose Fast for API-key models",
+  );
+  assert.strictEqual(coreTier.effective(emptyModel, "priority"), "priority");
+  assert.strictEqual(coreTier.effective(emptyModel, "fast"), "priority");
+  assert.strictEqual(coreTier.isValid(emptyModel, "priority"), true);
+  assert.strictEqual(coreTier.isValid(emptyModel, "fast"), true);
+
   assert.strictEqual(tierForAttachments("priority", []), "priority");
   assert.strictEqual(tierForAttachments("fast", []), "priority");
   assert.strictEqual(tierForAttachments("priority", [{ mimeType: "text/plain", name: "readme.md" }]), "priority");
@@ -80,6 +105,8 @@ function verifyPlatform(platform) {
     fastOption,
     effectiveFromPriority: effective,
     effectiveFromLegacyFast: effectiveTier(emptyModel, "fast", null),
+    nativeEffectiveFromPriority: coreTier.effective(emptyModel, "priority"),
+    nativeValidPriority: coreTier.isValid(emptyModel, "priority"),
     apiTextPriority: tierForAttachments("priority", []),
     apiLegacyFastNormalized: tierForAttachments("fast", []),
     apiImagePriority: tierForAttachments("priority", [{ mimeType: "image/png" }]),

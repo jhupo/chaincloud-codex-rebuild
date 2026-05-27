@@ -23,6 +23,9 @@ const SERVICE_TIER_HELPER =
 const EFFECTIVE_SERVICE_TIER_HELPER =
   "function ChainCloudEffectiveServiceTier(e,t,n){return n??(t===`fast`||t===`priority`?`priority`:n)}";
 
+const FAST_TIER_MODEL_HELPER =
+  "function ChainCloudFastTierModel(e){if(e==null)return e;let t=Array.isArray(e.serviceTiers)?e.serviceTiers:[],n=t.some(e=>e&&(e.id===`priority`||e.id===`fast`||e.name?.trim().toLowerCase()===`fast`||e.name?.trim().toLowerCase()===`priority`));return n?e:{...e,serviceTiers:[...t,{id:`priority`,name:`Fast`,description:`1.5x speed, increased usage`}]}}";
+
 function walk(node, visitor) {
   if (!node || typeof node !== "object") return;
   if (node.type) visitor(node);
@@ -147,6 +150,63 @@ function collectCurrentFastModePatches(source) {
 function collectServiceTierPatches(ast, source) {
   const patches = [];
 
+  const serviceTierCoreRe = /function [A-Za-z_$][\w$]*\(e,t\)\{return t==null\?null:t===`fast`\?[A-Za-z_$][\w$]*\(e\):e\?\.serviceTiers\?\.find\(e=>e\.id===t\)\?\?null\}/;
+  const hasNativeServiceTierCore = serviceTierCoreRe.test(source);
+  const serviceTierCoreMatch = serviceTierCoreRe.exec(source);
+  if (serviceTierCoreMatch && !source.includes("function ChainCloudFastTierModel(")) {
+    patches.push({
+      id: "fast_mode_model_helper",
+      start: serviceTierCoreMatch.index,
+      end: serviceTierCoreMatch.index,
+      replacement: FAST_TIER_MODEL_HELPER,
+      original: "",
+    });
+  }
+
+  const modelAwareReplacements = [
+    {
+      id: "fast_mode_core_selected_tier",
+      re: /function ([A-Za-z_$][\w$]*)\(e,t\)\{return t==null\?null:t===`fast`\?([A-Za-z_$][\w$]*)\(e\):e\?\.serviceTiers\?\.find\(e=>e\.id===t\)\?\?null\}/g,
+      make: ([original, fn, fastFn]) =>
+        original.includes("ChainCloudFastTierModel")
+          ? null
+          : `function ${fn}(e,t){return e=ChainCloudFastTierModel(e),t==null?null:t===\`fast\`?${fastFn}(e):e?.serviceTiers?.find(e=>e.id===t)??null}`,
+    },
+    {
+      id: "fast_mode_core_available_options",
+      re: /function ([A-Za-z_$][\w$]*)\(e\)\{return\[\{description:[A-Za-z_$][\w$]*\.standardDescription,iconKind:null,label:[A-Za-z_$][\w$]*\.standardLabel,tier:null,value:null\},\.\.\.\(e\?\.serviceTiers\?\?\[\]\)\.map\(e=>\(\{description:[A-Za-z_$][\w$]*\(e\),iconKind:[A-Za-z_$][\w$]*\(e\.id,e\.name\),label:[A-Za-z_$][\w$]*\(e\),tier:e,value:e\.id\}\)\)\]\}/g,
+      make: ([original, fn]) =>
+        original.includes("ChainCloudFastTierModel")
+          ? null
+          : original.replace(`function ${fn}(e){return`, `function ${fn}(e){return e=ChainCloudFastTierModel(e),`),
+    },
+    {
+      id: "fast_mode_core_fast_tier",
+      re: /function ([A-Za-z_$][\w$]*)\(e\)\{return e\?\.serviceTiers\?\.find\(e=>[A-Za-z_$][\w$]*\(e\.id,e\.name\)===`fast`\|\|e\.name\.trim\(\)\.toLowerCase\(\)===`priority`\)\?\?null\}/g,
+      make: ([original, fn]) =>
+        original.includes("ChainCloudFastTierModel")
+          ? null
+          : original.replace(`function ${fn}(e){return`, `function ${fn}(e){return e=ChainCloudFastTierModel(e),`),
+    },
+  ];
+
+  for (const { id, re, make } of modelAwareReplacements) {
+    let match;
+    while ((match = re.exec(source))) {
+      const replacement = make(match);
+      if (replacement == null || replacement === match[0]) continue;
+      patches.push({
+        id,
+        start: match.index,
+        end: match.index + match[0].length,
+        replacement,
+        original: match[0],
+      });
+    }
+  }
+
+  if (!hasNativeServiceTierCore && !/^import\{[^}]*\bei as /.test(source)) return patches;
+
   const helperMatch = /function ChainCloudServiceTierOptions\([^)]*\)\{.*?return [A-Za-z_$][\w$]*\}/.exec(source);
   if (helperMatch && helperMatch[0] !== SERVICE_TIER_HELPER) {
     patches.push({
@@ -270,7 +330,7 @@ function applyPatches(source, patches) {
   for (const patch of patches) {
     if (!unique.some((p) => p.start === patch.start && p.end === patch.end)) unique.push(patch);
   }
-  unique.sort((a, b) => b.start - a.start);
+  unique.sort((a, b) => b.start - a.start || (b.end - b.start) - (a.end - a.start));
   for (const patch of unique) {
     code = code.slice(0, patch.start) + patch.replacement + code.slice(patch.end);
   }
@@ -304,6 +364,18 @@ function validateFastModeBundle(file, source) {
       if (!source.includes(marker)) throw new Error(`${relPath(file)} missing service-tier marker: ${marker}`);
     }
   }
+
+  if (source.includes("function ChainCloudFastTierModel(")) {
+    const required = [
+      "function ChainCloudFastTierModel",
+      "id:`priority`",
+      "name:`Fast`",
+      "e=ChainCloudFastTierModel(e)",
+    ];
+    for (const marker of required) {
+      if (!source.includes(marker)) throw new Error(`${relPath(file)} missing core service-tier marker: ${marker}`);
+    }
+  }
 }
 
 function main() {
@@ -333,10 +405,13 @@ function main() {
       const isCurrentFastHook = /^use-is-fast-mode-enabled-.*\.js$/.test(f);
       const isServiceTier = /^use-service-tier-settings-.*\.js$/.test(f);
       const isLegacyGate = src.includes("authMethod") && src.includes("fast_mode");
+      const isServiceTierCore =
+        /function [A-Za-z_$][\w$]*\(e,t\)\{return t==null\?null:t===`fast`\?[A-Za-z_$][\w$]*\(e\):e\?\.serviceTiers\?\.find\(e=>e\.id===t\)\?\?null\}/.test(src) ||
+        src.includes("function ChainCloudFastTierModel(");
       sawFastHook ||= isCurrentFastHook;
       sawServiceTier ||= isServiceTier;
       sawLegacyGate ||= isLegacyGate;
-      if (isCurrentFastHook || isServiceTier || isLegacyGate) {
+      if (isCurrentFastHook || isServiceTier || isLegacyGate || isServiceTierCore) {
         targets.push({ platform: plat, path: fp });
       }
     }
