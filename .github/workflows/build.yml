@@ -184,8 +184,6 @@ jobs:
           files: |
             artifacts/**/*.dmg
             artifacts/**/*.zip
-            artifacts/**/*.deb
-            artifacts/**/*.rpm
           draft: false
           fail_on_unmatched_files: true
 
