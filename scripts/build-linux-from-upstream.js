@@ -56,6 +56,11 @@ function readVersion() {
   return pkg.version || "unknown";
 }
 
+function readElectronVersion() {
+  const pkg = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf-8"));
+  return String(pkg.devDependencies?.electron || pkg.dependencies?.electron || "").replace(/^[^\d]*/, "");
+}
+
 function assertFile(filePath, label) {
   if (!fs.existsSync(filePath)) throw new Error(`${label} missing: ${filePath}`);
   const size = fs.statSync(filePath).size;
@@ -119,9 +124,39 @@ function runAsarPack(srcDir, asarPath) {
   execSync(`${command} pack "${srcDir}" "${asarPath}"`, { cwd: PROJECT_ROOT, stdio: "inherit" });
 }
 
+async function resolveElectronDist(arch) {
+  const version = readElectronVersion();
+  if (!version) throw new Error("Cannot determine Electron version");
+
+  if (process.platform === "linux" && process.arch === arch) {
+    try {
+      const electronPath = require("electron");
+      const dist = path.dirname(electronPath);
+      if (fs.existsSync(path.join(dist, "electron"))) return dist;
+    } catch {}
+  }
+
+  const dist = path.join(os.tmpdir(), "chaincloud-electron-shell", `electron-v${version}-linux-${arch}`);
+  if (fs.existsSync(path.join(dist, "electron"))) return dist;
+
+  console.log(`   [electron] downloading linux-${arch} v${version}`);
+  clearDir(dist);
+  const { downloadArtifact } = require("@electron/get");
+  const extract = require("extract-zip");
+  const zip = await downloadArtifact({
+    version,
+    artifactName: "electron",
+    platform: "linux",
+    arch,
+    checksums: require(path.join(PROJECT_ROOT, "node_modules", "electron", "checksums.json")),
+  });
+  await extract(zip, { dir: dist });
+  assertFile(path.join(dist, "electron"), `Electron linux-${arch} executable`);
+  return dist;
+}
+
 async function packageLinux(arch, platformName) {
-  const electronPath = require("electron");
-  const electronDist = path.dirname(electronPath);
+  const electronDist = await resolveElectronDist(arch);
   const packageDir = path.join(OUT_DIR, `Codex-linux-${arch}`);
   const resourcesDir = path.join(packageDir, "resources");
   const appAsar = path.join(resourcesDir, "app.asar");
