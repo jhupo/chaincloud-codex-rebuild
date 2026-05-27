@@ -124,6 +124,33 @@ function runAsarPack(srcDir, asarPath) {
   execSync(`${command} pack "${srcDir}" "${asarPath}"`, { cwd: PROJECT_ROOT, stdio: "inherit" });
 }
 
+function extractZip(zipPath, destDir) {
+  clearDir(destDir);
+  const commands = [
+    `7z x -y -o"${destDir}" "${zipPath}"`,
+    `7zz x -y -o"${destDir}" "${zipPath}"`,
+    `unzip -q "${zipPath}" -d "${destDir}"`,
+  ];
+  for (const command of commands) {
+    try {
+      execSync(command, { cwd: PROJECT_ROOT, stdio: "inherit" });
+      return;
+    } catch {}
+  }
+  throw new Error(`Could not extract ${zipPath}`);
+}
+
+function downloadFile(url, destPath) {
+  fs.mkdirSync(path.dirname(destPath), { recursive: true });
+  if (fs.existsSync(destPath)) fs.rmSync(destPath, { force: true });
+  console.log(`   [download] ${url}`);
+  execFileSync("curl", ["-L", "--retry", "3", "--retry-delay", "2", "-o", destPath, url], {
+    cwd: PROJECT_ROOT,
+    stdio: "inherit",
+  });
+  assertFile(destPath, "downloaded Electron zip");
+}
+
 async function resolveElectronDist(arch) {
   const version = readElectronVersion();
   if (!version) throw new Error("Cannot determine Electron version");
@@ -139,18 +166,14 @@ async function resolveElectronDist(arch) {
   const dist = path.join(os.tmpdir(), "chaincloud-electron-shell", `electron-v${version}-linux-${arch}`);
   if (fs.existsSync(path.join(dist, "electron"))) return dist;
 
+  const mirror = process.env.ELECTRON_MIRROR || "https://github.com/electron/electron/releases/download/";
+  const base = mirror.endsWith("/") ? mirror : `${mirror}/`;
+  const zipName = `electron-v${version}-linux-${arch}.zip`;
+  const url = `${base}v${version}/${zipName}`;
+  const zipPath = path.join(os.tmpdir(), "chaincloud-electron-shell", zipName);
   console.log(`   [electron] downloading linux-${arch} v${version}`);
-  clearDir(dist);
-  const { downloadArtifact } = require("@electron/get");
-  const extract = require("extract-zip");
-  const zip = await downloadArtifact({
-    version,
-    artifactName: "electron",
-    platform: "linux",
-    arch,
-    checksums: require(path.join(PROJECT_ROOT, "node_modules", "electron", "checksums.json")),
-  });
-  await extract(zip, { dir: dist });
+  downloadFile(url, zipPath);
+  extractZip(zipPath, dist);
   assertFile(path.join(dist, "electron"), `Electron linux-${arch} executable`);
   return dist;
 }
