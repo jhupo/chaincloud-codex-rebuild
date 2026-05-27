@@ -1,15 +1,13 @@
 #!/usr/bin/env node
 /**
  * ChainCloud compatibility patch:
- * keep fast/priority mode for normal text turns, but do not send the priority
- * service tier when a turn includes image/file attachments. Some compatible
- * Responses backends stall on priority + image payloads and the UI sits at
- * 0 tokens/s before surfacing a generic error.
+ * normalize legacy/local "fast" service tier values to the API "priority"
+ * tier before building conversation params.
  */
 const { locateBundles, read, relPath, write } = require("./patch-util");
 
 const HELPER =
-  "function ChainCloudServiceTierForAttachments(e,t){if(e!==`fast`&&e!==`priority`)return e;let r=e===`fast`?`priority`:e,n=Array.isArray(t)&&t.some(e=>{let t=String(e?.mimeType??e?.mime_type??e?.type??e?.mediaType??e?.name??e?.path??``).toLowerCase();return t.includes(`image/`)||/\\.(png|jpe?g|webp|gif|bmp|heic|heif)$/i.test(t)});return n?void 0:r}";
+  "function ChainCloudServiceTierForAttachments(e,t){return e===`fast`?`priority`:e}";
 
 function patchBundle(file, isCheck) {
   let source = read(file);
@@ -38,8 +36,6 @@ function validate(file, source) {
     "function ChainCloudServiceTierForAttachments",
     "serviceTier:S",
     "e===`fast`?`priority`:e",
-    "mimeType",
-    "image/",
   ];
   for (const marker of required) {
     if (!source.includes(marker)) throw new Error(`${relPath(file)} missing image fast-tier marker: ${marker}`);

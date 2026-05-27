@@ -72,8 +72,8 @@ function verifyPlatform(platform) {
   assert.strictEqual(tierForAttachments("priority", []), "priority");
   assert.strictEqual(tierForAttachments("fast", []), "priority");
   assert.strictEqual(tierForAttachments("priority", [{ mimeType: "text/plain", name: "readme.md" }]), "priority");
-  assert.strictEqual(tierForAttachments("priority", [{ mimeType: "image/png" }]), undefined);
-  assert.strictEqual(tierForAttachments("fast", [{ name: "photo.jpg" }]), undefined);
+  assert.strictEqual(tierForAttachments("priority", [{ mimeType: "image/png" }]), "priority");
+  assert.strictEqual(tierForAttachments("fast", [{ name: "photo.jpg" }]), "priority");
 
   return {
     platform,
@@ -82,8 +82,8 @@ function verifyPlatform(platform) {
     effectiveFromLegacyFast: effectiveTier(emptyModel, "fast", null),
     apiTextPriority: tierForAttachments("priority", []),
     apiLegacyFastNormalized: tierForAttachments("fast", []),
-    apiImagePriority: tierForAttachments("priority", [{ mimeType: "image/png" }]) ?? null,
-    apiImageLegacyFast: tierForAttachments("fast", [{ name: "photo.jpg" }]) ?? null,
+    apiImagePriority: tierForAttachments("priority", [{ mimeType: "image/png" }]),
+    apiImageLegacyFast: tierForAttachments("fast", [{ name: "photo.jpg" }]),
   };
 }
 
