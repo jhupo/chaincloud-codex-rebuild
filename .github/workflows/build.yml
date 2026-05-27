@@ -42,6 +42,7 @@ jobs:
           brew install --quiet sevenzip
       - run: node scripts/sync-upstream.js --force --skip-win
       - run: node scripts/patch-all.js mac-${{ matrix.arch }}
+      - run: node scripts/verify-chaincloud-config-patch.js mac-${{ matrix.arch }}
       - run: npm run build:mac-${{ matrix.arch }}
       - uses: actions/upload-artifact@v7
         with:
@@ -70,6 +71,7 @@ jobs:
       - run: node scripts/sync-upstream.js --force --skip-mac
       - run: node scripts/patch-all.js win
       - run: node scripts/verify-fast-mode-bundle.js win
+      - run: node scripts/verify-chaincloud-config-patch.js win
       - run: npm run build:win-x64
       - uses: actions/upload-artifact@v7
         with:
@@ -101,6 +103,7 @@ jobs:
         run: echo "ELECTRON_MIRROR=${ELECTRON_MIRROR}" >> $GITHUB_ENV
       - run: node scripts/sync-upstream.js --force --skip-win
       - run: node scripts/patch-all.js mac-${{ matrix.arch }}
+      - run: node scripts/verify-chaincloud-config-patch.js mac-${{ matrix.arch }}
       - run: npm run build:linux-${{ matrix.arch }}
       - name: Ensure Linux artifact exists
         shell: bash

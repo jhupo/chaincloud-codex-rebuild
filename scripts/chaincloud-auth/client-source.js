@@ -68,8 +68,10 @@ function jsClientSource() {
     };
   }
   async function applyCodexConfig(writeConfig){
-    await window.electronBridge?.chaincloudWriteConfig?.();
-    if (typeof writeConfig !== "function") return false;
+    if (typeof writeConfig !== "function") {
+      await window.electronBridge?.chaincloudWriteConfig?.();
+      return false;
+    }
     await writeConfig(codexConfigPayload());
     window.dispatchEvent(new CustomEvent("chaincloud-codex-config-applied"));
     return true;

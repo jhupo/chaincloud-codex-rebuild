@@ -32,7 +32,7 @@ const TARGET_TRIPLE_MAP = {
 // ─── Helpers ────────────────────────────────────────────────────
 
 function clearDir(dir) {
-  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true });
+  if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 250 });
   fs.mkdirSync(dir, { recursive: true });
 }
 

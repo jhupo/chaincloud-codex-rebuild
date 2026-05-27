@@ -18,13 +18,13 @@ const { parse } = require("acorn");
 const { relPath, SRC_DIR } = require("./patch-util");
 
 const SERVICE_TIER_HELPER =
-  "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[],n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`fast`||e?.value===`priority`||e?.iconKind===`fast`)||(t=[...t,{value:`priority`,label:`Fast`,description:`1.5x speed, increased usage`,iconKind:`fast`}]);return t}";
+  "function ChainCloudServiceTierOptions(e){let t=Array.isArray(e)?e.filter(Boolean):[];t=t.map(e=>e?.value===`priority`||e?.value===`fast`||e?.iconKind===`fast`?{...e,value:`priority`,label:`Fast`,description:`1.5x speed, increased usage`,iconKind:`fast`}:e).filter((e,t,n)=>e?.value!==`priority`||n.findIndex(e=>e?.value===`priority`)===t);let n=t.some(e=>e?.value==null||e?.value===`standard`);n||(t=[{value:null,label:`Standard`,description:`Standard speed`,iconKind:null},...t]);t.some(e=>e?.value===`priority`&&e?.iconKind===`fast`)||(t=[...t,{value:`priority`,label:`Fast`,description:`1.5x speed, increased usage`,iconKind:`fast`}]);return t}";
 
 const EFFECTIVE_SERVICE_TIER_HELPER =
   "function ChainCloudEffectiveServiceTier(e,t,n){return n??(t===`fast`||t===`priority`?`priority`:n)}";
 
 const FAST_TIER_MODEL_HELPER =
-  "function ChainCloudFastTierModel(e){if(e==null)return e;let t=Array.isArray(e.serviceTiers)?e.serviceTiers:[],n=t.some(e=>e&&(e.id===`priority`||e.id===`fast`||e.name?.trim().toLowerCase()===`fast`||e.name?.trim().toLowerCase()===`priority`));return n?e:{...e,serviceTiers:[...t,{id:`priority`,name:`Fast`,description:`1.5x speed, increased usage`}]}}";
+  "function ChainCloudFastTierModel(e){if(e==null)return e;let t=Array.isArray(e.serviceTiers)?e.serviceTiers:[],n=t.map(e=>e&&(e.id===`priority`||e.id===`fast`||e.name?.trim().toLowerCase()===`fast`||e.name?.trim().toLowerCase()===`priority`)?{...e,id:`priority`,name:`Fast`,description:e.description||`1.5x speed, increased usage`}:e).filter((e,t,n)=>e?.id!==`priority`||n.findIndex(e=>e?.id===`priority`)===t);return n.some(e=>e?.id===`priority`)?{...e,serviceTiers:n}:{...e,serviceTiers:[...n,{id:`priority`,name:`Fast`,description:`1.5x speed, increased usage`}]}}";
 
 function walk(node, visitor) {
   if (!node || typeof node !== "object") return;
@@ -147,13 +147,40 @@ function collectCurrentFastModePatches(source) {
   return patches;
 }
 
+function findFunctionRange(source, name) {
+  const start = source.indexOf(`function ${name}(`);
+  if (start < 0) return null;
+  let depth = 0;
+  let sawBody = false;
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i];
+    if (ch === "{") {
+      depth += 1;
+      sawBody = true;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (sawBody && depth === 0) return { start, end: i + 1, source: source.slice(start, i + 1) };
+    }
+  }
+  return null;
+}
+
 function collectServiceTierPatches(ast, source) {
   const patches = [];
 
   const serviceTierCoreRe = /function [A-Za-z_$][\w$]*\(e,t\)\{return t==null\?null:t===`fast`\?[A-Za-z_$][\w$]*\(e\):e\?\.serviceTiers\?\.find\(e=>e\.id===t\)\?\?null\}/;
   const hasNativeServiceTierCore = serviceTierCoreRe.test(source);
   const serviceTierCoreMatch = serviceTierCoreRe.exec(source);
-  if (serviceTierCoreMatch && !source.includes("function ChainCloudFastTierModel(")) {
+  const fastTierModelRange = findFunctionRange(source, "ChainCloudFastTierModel");
+  if (fastTierModelRange && fastTierModelRange.source !== FAST_TIER_MODEL_HELPER) {
+    patches.push({
+      id: "fast_mode_model_helper_upgrade",
+      start: fastTierModelRange.start,
+      end: fastTierModelRange.end,
+      replacement: FAST_TIER_MODEL_HELPER,
+      original: fastTierModelRange.source,
+    });
+  } else if (serviceTierCoreMatch && !fastTierModelRange) {
     patches.push({
       id: "fast_mode_model_helper",
       start: serviceTierCoreMatch.index,

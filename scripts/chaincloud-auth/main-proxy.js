@@ -80,26 +80,32 @@ function __chaincloudSetTomlScalarV10(source, key, value) {
   if (pattern.test(source)) return source.replace(pattern, "$1" + line);
   return source.replace(/^\\s*/, "") ? line + "\\n" + source : line + "\\n";
 }
-function __chaincloudRemoveTomlTableV10(source, tableName) {
+function __chaincloudFindTomlTableV10(source, tableName) {
   let escaped = __chaincloudEscapeRegExpV10(tableName);
   let pattern = new RegExp("(^|\\\\n)\\\\[" + escaped + "\\\\][\\\\s\\\\S]*?(?=\\\\n\\\\[[^\\\\n]+\\\\]|$)");
-  return source.replace(pattern, "$1").replace(/\\n{3,}/g, "\\n\\n");
+  let match = pattern.exec(source);
+  return match ? { start: match.index + match[1].length, end: match.index + match[0].length, text: match[0].slice(match[1].length) } : null;
+}
+function __chaincloudSetTomlTableScalarV10(source, tableName, key, value) {
+  let table = __chaincloudFindTomlTableV10(source, tableName);
+  let line = key + " = " + __chaincloudTomlStringV10(value);
+  if (!table) {
+    let prefix = source.replace(/\\s+$/, "");
+    return prefix + (prefix ? "\\n\\n" : "") + "[" + tableName + "]\\n" + line + "\\n";
+  }
+  let body = table.text;
+  let pattern = new RegExp("(^|\\\\n)" + __chaincloudEscapeRegExpV10(key) + "\\\\s*=.*(?=\\\\n|$)");
+  let nextBody = pattern.test(body) ? body.replace(pattern, "$1" + line) : body.replace(/\\s*$/, "") + "\\n" + line;
+  return source.slice(0, table.start) + nextBody + source.slice(table.end);
 }
 function __chaincloudEnsureConfigTextV10(source) {
   let text = String(source || "").replace(/\\r\\n/g, "\\n");
   text = __chaincloudSetTomlScalarV10(text, "model_provider", __chaincloudProviderIdV10);
-  text = __chaincloudRemoveTomlTableV10(text, "model_providers.openai");
-  text = __chaincloudRemoveTomlTableV10(text, "model_providers." + __chaincloudProviderIdV10);
-  text = text.replace(/\\s+$/, "");
-  let table = [
-    "",
-    "[model_providers." + __chaincloudProviderIdV10 + "]",
-    "name = " + __chaincloudTomlStringV10("\\u94fe\\u8def\\u4e91"),
-    "base_url = " + __chaincloudTomlStringV10(${JSON.stringify(CHAINCLOUD_OPENAI_BASE_URL)}),
-    "wire_api = " + __chaincloudTomlStringV10("responses"),
-    ""
-  ].join("\\n");
-  return text + table;
+  let tableName = "model_providers." + __chaincloudProviderIdV10;
+  text = __chaincloudSetTomlTableScalarV10(text, tableName, "name", "\\u94fe\\u8def\\u4e91");
+  text = __chaincloudSetTomlTableScalarV10(text, tableName, "base_url", ${JSON.stringify(CHAINCLOUD_OPENAI_BASE_URL)});
+  text = __chaincloudSetTomlTableScalarV10(text, tableName, "wire_api", "responses");
+  return text.replace(/\\s+$/, "") + "\\n";
 }
 async function __chaincloudWriteConfigTomlV10() {
   let codexHome = process.env.CODEX_HOME && process.env.CODEX_HOME.trim() ? process.env.CODEX_HOME : __chaincloudPathV11.join(__chaincloudOsV11.homedir(), ".codex");

@@ -63,8 +63,11 @@ function verifyPlatform(platform) {
 
   const emptyModel = { serviceTiers: [] };
   const priorityModel = { serviceTiers: [{ id: "priority", name: "Priority" }] };
+  const legacyFastModel = { serviceTiers: [{ id: "fast", name: "Fast" }] };
   const options = serviceOptions([]);
   const fastOption = options.find((option) => option.iconKind === "fast");
+  const priorityOptions = serviceOptions([{ value: "priority", label: "Priority", description: "Priority tier", iconKind: null }]);
+  const priorityFastOption = priorityOptions.find((option) => option.value === "priority");
 
   assert.deepStrictEqual(
     fastOption && { value: fastOption.value, iconKind: fastOption.iconKind },
@@ -72,6 +75,19 @@ function verifyPlatform(platform) {
     "injected Fast option must use the API priority tier and fast icon",
   );
   assert(options.some((option) => option.value == null), "Standard option must remain available");
+  assert.deepStrictEqual(
+    priorityFastOption && { label: priorityFastOption.label, value: priorityFastOption.value, iconKind: priorityFastOption.iconKind },
+    { label: "Fast", value: "priority", iconKind: "fast" },
+    "upstream priority tier must render as the Fast lightning option",
+  );
+  assert.strictEqual(
+    serviceOptions([
+      { value: "priority", label: "Priority", iconKind: null },
+      { value: "fast", label: "Fast", iconKind: "fast" },
+    ]).filter((option) => option.value === "priority").length,
+    1,
+    "Fast options must be de-duplicated after priority/fast normalization",
+  );
 
   assert.strictEqual(effectiveTier(emptyModel, "priority", nativeEffective(emptyModel, "priority")), "priority");
   assert.strictEqual(effectiveTier(emptyModel, "fast", nativeEffective(emptyModel, "fast")), "priority");
@@ -93,6 +109,17 @@ function verifyPlatform(platform) {
   assert.strictEqual(coreTier.effective(emptyModel, "fast"), "priority");
   assert.strictEqual(coreTier.isValid(emptyModel, "priority"), true);
   assert.strictEqual(coreTier.isValid(emptyModel, "fast"), true);
+  assert.deepStrictEqual(
+    coreTier.options(priorityModel).find((option) => option.value === "priority") && {
+      label: coreTier.options(priorityModel).find((option) => option.value === "priority").label,
+      value: coreTier.options(priorityModel).find((option) => option.value === "priority").value,
+      iconKind: coreTier.options(priorityModel).find((option) => option.value === "priority").iconKind,
+    },
+    { label: "Fast", value: "priority", iconKind: "fast" },
+    "native priority tier must render as the Fast lightning option",
+  );
+  assert.strictEqual(coreTier.effective(legacyFastModel, "priority"), "priority");
+  assert.strictEqual(coreTier.isValid(legacyFastModel, "priority"), true);
 
   assert.strictEqual(tierForAttachments("priority", []), "priority");
   assert.strictEqual(tierForAttachments("fast", []), "priority");
@@ -103,6 +130,7 @@ function verifyPlatform(platform) {
   return {
     platform,
     fastOption,
+    priorityFastOption,
     effectiveFromPriority: effective,
     effectiveFromLegacyFast: effectiveTier(emptyModel, "fast", null),
     nativeEffectiveFromPriority: coreTier.effective(emptyModel, "priority"),
