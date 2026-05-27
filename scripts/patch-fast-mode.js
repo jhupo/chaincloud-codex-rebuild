@@ -160,11 +160,12 @@ function collectServiceTierPatches(ast, source) {
     const insertMatch = /var [A-Za-z_$][\w$]*=u\(\);function /.exec(source);
     if (insertMatch) {
       const insertAt = insertMatch.index + insertMatch[0].length - "function ".length;
+      const needsEffectiveHelper = !source.includes("function ChainCloudEffectiveServiceTier(");
       patches.push({
         id: "fast_mode_service_tier_helper",
         start: insertAt,
         end: insertAt,
-        replacement: SERVICE_TIER_HELPER,
+        replacement: SERVICE_TIER_HELPER + (needsEffectiveHelper ? EFFECTIVE_SERVICE_TIER_HELPER : ""),
         original: "",
       });
     }
@@ -180,7 +181,10 @@ function collectServiceTierPatches(ast, source) {
       replacement: EFFECTIVE_SERVICE_TIER_HELPER,
       original: effectiveHelperMatch[0],
     });
-  } else if (!source.includes("ChainCloudEffectiveServiceTier(")) {
+  } else if (
+    !source.includes("ChainCloudEffectiveServiceTier(") &&
+    !patches.some((patch) => patch.id === "fast_mode_service_tier_helper" && patch.replacement.includes("ChainCloudEffectiveServiceTier"))
+  ) {
     const optionsHelperIndex = source.indexOf(SERVICE_TIER_HELPER);
     if (optionsHelperIndex >= 0) {
       patches.push({
