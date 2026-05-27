@@ -109,6 +109,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [ -d out ]; then
+            find out -maxdepth 4 -type f -o -type d
+          fi
           if find out/make -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.zip' \) | grep -q .; then
             exit 0
           fi
