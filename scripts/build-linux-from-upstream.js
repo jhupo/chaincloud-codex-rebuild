@@ -2,12 +2,13 @@
 /**
  * Build a Linux portable package from the patched upstream ASAR.
  *
- * Electron Forge's make step can resolve makers and still leave no out/ on
- * Linux in CI. This script keeps the same prepare/rebuild/sync flow, then uses
- * @electron/packager directly and asserts the package + zip actually exist.
+ * Electron Forge's Linux make step proved too quiet in CI when it failed to
+ * create output. This script keeps the prepare/rebuild/sync flow, then
+ * assembles the package from Electron's Linux dist directory.
  */
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const { execFileSync, execSync } = require("child_process");
 
 const PROJECT_ROOT = path.resolve(__dirname, "..");
@@ -62,106 +63,118 @@ function assertFile(filePath, label) {
   return size;
 }
 
-function findPackageDirs() {
-  if (!fs.existsSync(OUT_DIR)) return [];
-  return fs.readdirSync(OUT_DIR, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && /^Codex-linux-/.test(entry.name))
-    .map((entry) => path.join(OUT_DIR, entry.name));
-}
-
-function printOutTree() {
-  console.log("\n== out/ tree ==");
-  if (!fs.existsSync(OUT_DIR)) {
-    console.log("out/ does not exist");
-    return;
-  }
-  const pending = [{ dir: OUT_DIR, depth: 0 }];
-  while (pending.length) {
-    const { dir, depth } = pending.shift();
-    if (depth > 3) continue;
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      const full = path.join(dir, entry.name);
-      console.log(path.relative(PROJECT_ROOT, full));
-      if (entry.isDirectory()) pending.push({ dir: full, depth: depth + 1 });
+function copyRecursive(src, dest, options = {}) {
+  const { skip = new Set(), chmodExecutable = false } = options;
+  fs.mkdirSync(dest, { recursive: true });
+  let count = 0;
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    if (skip.has(entry.name)) continue;
+    const sourcePath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      count += copyRecursive(sourcePath, destPath, options);
+    } else if (!entry.isSymbolicLink()) {
+      fs.copyFileSync(sourcePath, destPath);
+      if (chmodExecutable) {
+        try { fs.chmodSync(destPath, 0o755); } catch {}
+      }
+      count++;
     }
   }
+  return count;
+}
+
+function createLinuxAppSource() {
+  const appSource = path.join(os.tmpdir(), "chaincloud-linux-app-source");
+  clearDir(appSource);
+  const allowed = [".vite", "webview", "skills", "native-menu-locales", "node_modules", "package.json"];
+  let count = 0;
+  for (const name of allowed) {
+    const source = path.join(PROJECT_ROOT, "src", name);
+    if (!fs.existsSync(source)) continue;
+    const dest = path.join(appSource, name);
+    const stat = fs.statSync(source);
+    if (stat.isDirectory()) {
+      count += copyRecursive(source, dest);
+    } else {
+      fs.copyFileSync(source, dest);
+      count++;
+    }
+  }
+  console.log(`   [app source] ${count} files`);
+  return appSource;
+}
+
+function runAsarPack(srcDir, asarPath) {
+  const candidates = [
+    path.join(PROJECT_ROOT, "node_modules", ".bin", process.platform === "win32" ? "asar.cmd" : "asar"),
+    path.join(PROJECT_ROOT, "node_modules", ".bin", "asar"),
+    path.join(PROJECT_ROOT, "node_modules", "@electron", "asar", "bin", "asar.mjs"),
+  ];
+  const asarBin = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!asarBin) throw new Error("Local @electron/asar CLI not found. Run npm ci first.");
+  const command = asarBin.endsWith(".mjs")
+    ? `"${process.execPath}" "${asarBin}"`
+    : `"${asarBin}"`;
+  execSync(`${command} pack "${srcDir}" "${asarPath}"`, { cwd: PROJECT_ROOT, stdio: "inherit" });
 }
 
 async function packageLinux(arch, platformName) {
-  const forgeConfig = require(path.join(PROJECT_ROOT, "forge.config.js"));
-  const { packager } = require("@electron/packager");
-  const packageJson = JSON.parse(fs.readFileSync(path.join(PROJECT_ROOT, "package.json"), "utf-8"));
-  const electronVersion = String(packageJson.devDependencies?.electron || packageJson.dependencies?.electron || "")
-    .replace(/^[^\d]*/, "");
+  const electronPath = require("electron");
+  const electronDist = path.dirname(electronPath);
+  const packageDir = path.join(OUT_DIR, `Codex-linux-${arch}`);
+  const resourcesDir = path.join(packageDir, "resources");
+  const appAsar = path.join(resourcesDir, "app.asar");
+  const sourcePlatformDir = path.join(PROJECT_ROOT, "src", platformName === "linux-arm64" ? "mac-arm64" : "mac-x64");
 
-  if (!electronVersion) throw new Error("Cannot determine Electron version");
-
+  console.log(`\n== Assemble Linux package: ${platformName} ==`);
+  console.log(`   electron dist: ${electronDist}`);
   clearDir(OUT_DIR);
-  const afterCompletePaths = [];
+  const shellFiles = copyRecursive(electronDist, packageDir);
+  console.log(`   [electron] copied ${shellFiles} files`);
+  const electronBin = path.join(packageDir, "electron");
+  const codexExe = path.join(packageDir, "Codex");
+  if (fs.existsSync(electronBin)) fs.renameSync(electronBin, codexExe);
+  try { fs.chmodSync(codexExe, 0o755); } catch {}
 
-  const options = {
-    ...forgeConfig.packagerConfig,
-    dir: PROJECT_ROOT,
-    out: OUT_DIR,
-    platform: "linux",
-    arch,
-    overwrite: true,
-    quiet: false,
-    electronVersion,
-    afterCopy: [
-      (buildPath, electronVersionArg, targetPlatform, targetArch, done) => {
-        Promise.resolve()
-          .then(async () => {
-            if (typeof forgeConfig.hooks?.packageAfterCopy === "function") {
-              await forgeConfig.hooks.packageAfterCopy(
-                forgeConfig,
-                buildPath,
-                electronVersionArg,
-                targetPlatform,
-                targetArch,
-              );
-            }
-          })
-          .then(() => done(), done);
-      },
-    ],
-    afterComplete: [
-      (finalPath, electronVersionArg, targetPlatform, targetArch, done) => {
-        afterCompletePaths.push(finalPath);
-        console.log(`[packager] afterComplete ${targetPlatform}-${targetArch}: ${path.relative(PROJECT_ROOT, finalPath)}`);
-        done();
-      },
-    ],
-  };
-
-  console.log(`\n== Package Linux: ${platformName} ==`);
-  let outputPaths = [];
-  const originalExit = process.exit;
-  try {
-    process.exit = (code) => {
-      throw new Error(`Unexpected process.exit(${code}) while running @electron/packager`);
-    };
-    outputPaths = await packager(options);
-  } finally {
-    process.exit = originalExit;
+  fs.mkdirSync(resourcesDir, { recursive: true });
+  const MACOS_ONLY_FILES = new Set([
+    "node", "node_repl",
+    "electron.icns", "Assets.car",
+    "codexTemplate.png", "codexTemplate@2x.png",
+    "app.asar", "codex-notification.wav",
+  ]);
+  const MACOS_ONLY_DIRS = new Set(["_asar", "native", "app.asar.unpacked"]);
+  let resourceCount = 0;
+  for (const entry of fs.readdirSync(sourcePlatformDir, { withFileTypes: true })) {
+    if (MACOS_ONLY_FILES.has(entry.name) || MACOS_ONLY_DIRS.has(entry.name) || entry.name.endsWith(".lproj")) continue;
+    const source = path.join(sourcePlatformDir, entry.name);
+    const dest = path.join(resourcesDir, entry.name);
+    if (entry.isDirectory()) {
+      resourceCount += copyRecursive(source, dest);
+    } else if (!entry.isSymbolicLink()) {
+      fs.copyFileSync(source, dest);
+      try { fs.chmodSync(dest, 0o755); } catch {}
+      resourceCount++;
+    }
   }
-  console.log(`[packager] outputs: ${JSON.stringify(outputPaths)}`);
-  console.log(`[packager] afterComplete paths: ${JSON.stringify(afterCompletePaths)}`);
-  printOutTree();
+  console.log(`   [resources] copied ${resourceCount} files`);
 
-  const packageDir = [
-    ...outputPaths,
-    ...afterCompletePaths,
-    ...findPackageDirs(),
-  ].find((p) => typeof p === "string" && fs.existsSync(p) && fs.statSync(p).isDirectory());
+  const appSource = createLinuxAppSource();
+  console.log("   [asar pack] src/ -> resources/app.asar");
+  runAsarPack(appSource, appAsar);
 
-  if (!packageDir) {
-    throw new Error(`@electron/packager did not produce a package directory. outputs=${JSON.stringify(outputPaths)}`);
+  for (const bin of ["codex", "rg"]) {
+    const source = path.join(sourcePlatformDir, bin);
+    const dest = path.join(resourcesDir, bin);
+    fs.copyFileSync(source, dest);
+    try { fs.chmodSync(dest, 0o755); } catch {}
+    console.log(`   [bin] ${bin}`);
   }
 
-  const appAsar = path.join(packageDir, "resources", "app.asar");
   const codexBin = path.join(packageDir, "resources", "codex");
   const rgBin = path.join(packageDir, "resources", "rg");
+  assertFile(codexExe, "Codex executable");
   assertFile(appAsar, "app.asar");
   assertFile(codexBin, "codex binary");
   assertFile(rgBin, "rg binary");
